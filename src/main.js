@@ -89,7 +89,9 @@ startMcpHttp({
 ipcMain.on('layout', (_e, rects) => {
   for (const [id, r] of Object.entries(rects)) {
     bounds[id] = { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
-    views[id]?.setBounds(bounds[id]);
+    collapsed[id] = bounds[id].width < 2 || bounds[id].height < 2;
+    views[id]?.setVisible(panesShown && !collapsed[id]);
+    if (!collapsed[id]) views[id]?.setBounds(bounds[id]);
   }
 });
 
@@ -156,7 +158,10 @@ function stop(child) {
 }
 
 // The browsers are native views drawn over the page, so the compare board hides them while it is open.
-ipcMain.on('panes:visible', (_e, visible) => { for (const v of Object.values(views)) v.setVisible(visible); });
+// A pane whose browser slot is collapsed reports a zero-size rect; its view stays hidden even when the panes return.
+const collapsed = {};
+let panesShown = true;
+ipcMain.on('panes:visible', (_e, visible) => { panesShown = visible; for (const [id, v] of Object.entries(views)) v.setVisible(visible && !collapsed[id]); });
 
 ipcMain.on('task:stop', (_e, { id }) => stop(running[id]));
 

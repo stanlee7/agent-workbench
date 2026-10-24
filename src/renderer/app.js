@@ -506,6 +506,46 @@ async function openAgents() {
   openOverlay('#agentsView');
 }
 
+/* ---------- layouts, fold, shortcuts ---------- */
+
+const LAYOUT_KEY = 'workbench.layout';
+let focusedPane = null;
+
+function setLayout(mode, focusId) {
+  const ids = Object.keys(els);
+  if (mode === 'focus') focusedPane = focusId || focusedPane || ids[0];
+  panesEl.classList.toggle('grid', mode === 'grid');
+  panesEl.classList.toggle('focus', mode === 'focus');
+  if (mode === 'grid') panesEl.style.gridTemplateColumns = `repeat(${Math.ceil(Math.sqrt(ids.length))}, minmax(0, 1fr))`;
+  else if (mode === 'columns') panesEl.style.gridTemplateColumns = `repeat(${ids.length}, minmax(0, 1fr))`;
+  for (const id of ids) {
+    els[id].classList.toggle('focused', mode === 'focus' && id === focusedPane);
+    els[id].style.setProperty('--rows', Math.max(1, ids.length - 1));
+  }
+  $('#layout').value = mode;
+  try { localStorage.setItem(LAYOUT_KEY, mode); } catch {}
+  requestAnimationFrame(sendLayout);
+}
+
+const FOLDS = ['both', 'browser', 'log'];
+function setFold(id, fold) {
+  els[id].classList.toggle('browser-only', fold === 'browser');
+  els[id].classList.toggle('log-only', fold === 'log');
+  $('.fold', els[id]).textContent = fold;
+  els[id].dataset.fold = fold;
+  requestAnimationFrame(sendLayout);
+}
+
+function shortcuts(e) {
+  if (e.key === 'Escape') return closeOverlay();
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const ids = Object.keys(els);
+  if (e.key === 'Enter') { e.preventDefault(); runTask(); }
+  else if (e.key === '0') { e.preventDefault(); closeOverlay(); setLayout('columns'); }
+  else if (/^[1-9]$/.test(e.key) && ids[+e.key - 1]) { e.preventDefault(); closeOverlay(); setLayout('focus', ids[+e.key - 1]); }
+  else if (e.key.toLowerCase() === 'k') { e.preventDefault(); closeOverlay(); $('#task').focus(); }
+}
+
 /* ---------- task bar position ---------- */
 
 const DOCK_KEY = 'workbench.dock';
@@ -522,7 +562,7 @@ async function init() {
   const cfg = await window.wb.config();
   port = cfg.port;
   const tpl = $('#paneTpl');
-  panesEl.style.gridTemplateColumns = `repeat(${cfg.panes.length}, minmax(0, 1fr))`;
+  // The layout mode sets the grid columns once the panes exist.
   for (const p of cfg.panes) {
     labels[p.id] = p.label;
     colors[p.id] = p.color || '#666666';
@@ -537,6 +577,9 @@ async function init() {
       renderProfiles(await window.wb.setProfile(p.id, sel.value));
     };
     $('.clear', node).onclick = async () => { renderProfiles(await window.wb.clearProfile(p.id)); };
+    $('.fold', node).onclick = () => setFold(p.id, FOLDS[(FOLDS.indexOf(node.dataset.fold || 'both') + 1) % FOLDS.length]);
+    // In focus layout, clicking a small pane's head brings it to the big slot.
+    $('.head', node).onclick = e => { if (panesEl.classList.contains('focus') && !e.target.closest('button')) setLayout('focus', p.id); };
     panesEl.appendChild(node);
     els[p.id] = node;
 
@@ -637,7 +680,11 @@ async function init() {
   $('#task').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); runTask(); }
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
+  document.addEventListener('keydown', shortcuts);
+  $('#layout').onchange = e => setLayout(e.target.value);
+  let layout = 'columns';
+  try { layout = localStorage.getItem(LAYOUT_KEY) || 'columns'; } catch {}
+  setLayout(layout);
   setInterval(() => {
     if (!working()) return;
     renderStatus();

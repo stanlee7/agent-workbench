@@ -110,6 +110,21 @@ Under each address bar is the pane's profile:
 
 Agents are told which sites their pane has cookies for, and they never sign in themselves: password fields are refused, and a login wall ends the task with a note to you.
 
+## Layouts and keys
+
+- **Columns** (default), **Grid** (2×2 for four agents) or **Focus** (one pane large, the others in a side column; click a small pane's header to bring it forward), from the toolbar or the keys below.
+- Each pane's **both / browser / log** button folds it to the browser alone or the log alone.
+- The task bar sits at the top or the bottom; the choice is remembered, as is the layout.
+
+| Key | Does |
+|---|---|
+| Enter (in the task box) | Run. Shift+Enter for a new line |
+| Ctrl+Enter | Run from anywhere |
+| Ctrl+1 … Ctrl+9 | Focus layout on pane 1 … 9 |
+| Ctrl+0 | Back to columns |
+| Ctrl+K | Jump to the task box |
+| Esc | Close the compare board, history or agents screen |
+
 ## Follow-ups, history, export
 
 - After a run, tick **Follow-up in the same session** and ask again; every checked agent continues its own session. The compare board's **Ask this agent** row sends a follow-up to one agent only.

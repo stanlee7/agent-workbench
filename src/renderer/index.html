@@ -19,6 +19,11 @@
     <button id="compare" disabled>Compare <span class="badge" hidden></span></button>
     <button id="openHistory">History</button>
     <button id="openAgents">Agents</button>
+    <select id="layout" title="Pane layout (Ctrl+0 columns, Ctrl+1…9 focus a pane)">
+      <option value="columns">Columns</option>
+      <option value="grid">Grid</option>
+      <option value="focus">Focus</option>
+    </select>
     <button id="dock" title="Move the task bar to the other edge">Bar at bottom</button>
   </header>
   <main id="panes"></main>
@@ -99,6 +104,7 @@
         <span class="dot"></span>
         <strong class="name"></strong>
         <span class="state">idle</span>
+        <button class="fold" title="Show browser and log, browser only, or log only">both</button>
         <button class="stop" title="Stop this agent">Stop</button>
       </div>
       <form class="addr"><input class="url" spellcheck="false"><button>Go</button></form>

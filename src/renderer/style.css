@@ -225,3 +225,22 @@ code { color: var(--orange); font-family: var(--mono); }
 .prof .logins.on { color: var(--orange); }
 .prof .logins.on::before { content: "● "; }
 .prof .clear { padding: 1px 7px; font-size: 11px; background: transparent; color: var(--dim); }
+
+/* layouts: columns (default), grid, focus (one big pane, the rest in a side column) */
+#layout { font: 12px var(--ui); color: var(--ink); background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+#panes.grid { grid-auto-rows: minmax(0, 1fr); }
+#panes.focus { grid-template-columns: minmax(0, 1fr) 340px !important; grid-auto-rows: minmax(0, 1fr); }
+#panes.focus .pane.focused { grid-column: 1; grid-row: 1 / span var(--rows, 1); }
+#panes.focus .pane:not(.focused) { grid-column: 2; }
+#panes.focus .pane:not(.focused) .head { cursor: pointer; }
+#panes.focus .pane:not(.focused) .head:hover { background: #24262b; }
+#panes.focus .pane:not(.focused) .addr, #panes.focus .pane:not(.focused) .prof { display: none; }
+#panes.focus .pane:not(.focused) .slot { flex: 1; min-height: 60px; }
+#panes.focus .pane:not(.focused) .log { flex: 0 0 110px; min-height: 0; font-size: 11px; }
+
+/* fold: browser only or log only */
+.head .fold { padding: 2px 8px; background: transparent; color: var(--dim); font-family: var(--mono); }
+.pane.browser-only .log { display: none; }
+.pane.browser-only .slot { flex: 1; }
+.pane.log-only .slot { display: none; }
+.pane.log-only .log { flex: 1; }
