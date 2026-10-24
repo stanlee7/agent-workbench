@@ -51,6 +51,27 @@ function runTask() {
   window.wb.run(ids, text);
 }
 
+/* ---------- status bar ---------- */
+
+let port = 0;
+function renderStatus() {
+  const bar = $('#status');
+  bar.textContent = '';
+  for (const id of Object.keys(els)) {
+    const r = runs[id];
+    const item = el('span', 'item');
+    const sw = el('span', 'sw'); sw.style.setProperty('--c', els[id].style.getPropertyValue('--c'));
+    item.appendChild(sw);
+    item.append(labels[id]);
+    const status = els[id].dataset.status || 'idle';
+    if (r) item.appendChild(el('span', status, `${status === 'working' ? '✻ ' : status === 'done' ? '✓ ' : ''}${status} ${secs(r).toFixed(0)}s`));
+    else item.appendChild(el('span', null, 'idle'));
+    bar.appendChild(item);
+  }
+  bar.appendChild(el('span', 'spacer'));
+  bar.appendChild(el('span', 'item', `MCP 127.0.0.1:${port}`));
+}
+
 /* ---------- full-window views (board, agents) ---------- */
 
 // Only one of these is open at a time; while one is, the native browser views are hidden.
@@ -245,6 +266,7 @@ function setDock(where) {
 
 async function init() {
   const cfg = await window.wb.config();
+  port = cfg.port;
   const tpl = $('#paneTpl');
   panesEl.style.gridTemplateColumns = `repeat(${cfg.panes.length}, minmax(0, 1fr))`;
   for (const p of cfg.panes) {
@@ -265,6 +287,7 @@ async function init() {
 
   const refresh = () => {
     updateCompareButton();
+    renderStatus();
     if (overlay === '#board') renderBoard();
     else if (cfg.autoCompare && Object.values(runs).every(r => r.status !== 'working')) setTimeout(openBoard, 2000);
   };
@@ -276,7 +299,7 @@ async function init() {
   });
   window.wb.on('pane:status', ({ id, status, code }) => {
     setStatus(id, status, status === 'error' ? `exited (${code})` : status);
-    if (status === 'working') return;
+    if (status === 'working') return renderStatus();
     const r = runs[id];
     if (r) { r.status = status; r.end = Date.now(); }
     line(id, `\n[${status === 'done' ? 'finished' : 'stopped'}${r ? ` after ${secs(r).toFixed(0)}s` : ''}]\n`, 'sys');
@@ -288,7 +311,7 @@ async function init() {
   });
   window.wb.on('pane:tool', ({ id, name, args }) => {
     const a = Object.keys(args || {}).length ? ' ' + JSON.stringify(args) : '';
-    line(id, `> ${name}${a}\n`, 'tool');
+    line(id, `● ${name}${a}\n`, 'tool');
     if (runs[id]) runs[id].tools++;
   });
   window.wb.on('pane:approval', ({ id, approvalId, question }) => {
@@ -340,7 +363,12 @@ async function init() {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); runTask(); }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
-  setInterval(() => { if (overlay === '#board' && Object.values(runs).some(r => r.status === 'working')) renderBoard(); }, 1000);
+  setInterval(() => {
+    if (!Object.values(runs).some(r => r.status === 'working')) return;
+    renderStatus();
+    if (overlay === '#board') renderBoard();
+  }, 1000);
+  renderStatus();
   new ResizeObserver(sendLayout).observe(panesEl);
   window.addEventListener('resize', sendLayout);
   sendLayout();

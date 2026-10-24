@@ -132,7 +132,7 @@ app.whenReady().then(() => {
     height: Math.min(980, height),
     title: 'Agent Workbench',
     autoHideMenuBar: true,
-    backgroundColor: '#f4f2ec',
+    backgroundColor: '#171717',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs') }
   });
   win.maximize();

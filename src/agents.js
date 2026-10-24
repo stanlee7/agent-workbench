@@ -19,16 +19,16 @@ const GUIDE = [
 
 export const DEFAULT_AGENTS = [
   {
-    id: 'claude', label: 'Claude Code', color: '#c96442', enabled: true,
+    id: 'claude', label: 'Claude Code', color: '#e18b6b', enabled: true,
     command: 'claude -p --mcp-config {mcpConfig} --strict-mcp-config --allowedTools mcp__wb --output-format text'
   },
   {
-    id: 'codex', label: 'Codex', color: '#3b3f46', enabled: true,
+    id: 'codex', label: 'Codex', color: '#d7dae0', enabled: true,
     // The workbench does its own approval for risky clicks, so Codex need not ask per call.
     command: 'codex exec --skip-git-repo-check -s read-only -c approval_policy=never -c mcp_servers.wb.url={url} -c mcp_servers.wb.default_tools_approval_mode=approve -'
   },
   {
-    id: 'agy', label: 'Antigravity', color: '#2f7de1', enabled: true,
+    id: 'agy', label: 'Antigravity', color: '#6a9cf7', enabled: true,
     // agy reads MCP servers from its own config: run `agy mcp add wb http://127.0.0.1:7788/mcp/agy` once.
     command: 'agy --dangerously-skip-permissions -p {prompt}'
   }
