@@ -11,9 +11,57 @@
     <div class="brand">Agent<b>Workbench</b></div>
     <textarea id="task" rows="2" placeholder="One task for every checked agent. e.g. Find 3 US workforce boards that fund AI training and give me their contact page URLs."></textarea>
     <div class="who" id="who"></div>
-    <button id="runAll" class="primary">Run ⏎</button>
+    <button id="runAll" class="primary" title="Enter">Run</button>
+    <button id="compare" disabled>Compare <span class="badge" hidden></span></button>
+    <button id="openAgents">Agents</button>
+    <button id="dock" title="Move the task bar to the other edge">Bar at bottom</button>
   </header>
   <main id="panes"></main>
+
+  <section id="board" hidden>
+    <div class="board-head">
+      <div>
+        <div class="kicker">Compare</div>
+        <h2 id="boardTask"></h2>
+      </div>
+      <div class="board-actions">
+        <button id="copyMd">Copy as Markdown</button>
+        <button id="closeBoard" class="primary">Back to panes</button>
+      </div>
+    </div>
+    <div id="shared"></div>
+    <table class="cmp" id="cols"></table>
+  </section>
+
+  <section id="agentsView" hidden>
+    <div class="board-head">
+      <div>
+        <div class="kicker">Agents</div>
+        <h2>Any CLI that speaks MCP can drive a pane</h2>
+      </div>
+      <div class="board-actions">
+        <button id="openFile">Open agents.json</button>
+        <button id="cancelAgents">Cancel</button>
+        <button id="saveAgents" class="primary">Save and restart</button>
+      </div>
+    </div>
+    <table class="cmp agents">
+      <thead><tr><th class="c-on">On</th><th class="c-color">Colour</th><th class="c-name">Name</th><th>Command</th><th class="c-del"></th></tr></thead>
+      <tbody id="agentRows"></tbody>
+    </table>
+    <p><button id="addAgent">Add agent</button></p>
+    <div class="help">
+      <p>Placeholders in a command:</p>
+      <table class="cmp ph">
+        <tr><th><code>{url}</code></th><td>this pane's MCP endpoint, for CLIs that take a server URL on the command line</td></tr>
+        <tr><th><code>{mcpConfig}</code></th><td>path to a generated <code>mcp.json</code> (<code>{"mcpServers":{"wb":{"type":"http","url":…}}}</code>)</td></tr>
+        <tr><th><code>{prompt}</code></th><td>the task as one argument. Leave it out and the task goes in through stdin.</td></tr>
+      </table>
+      <p>CLIs that only read MCP servers from their own settings need the pane registered once, as Antigravity does:
+        <code>agy mcp add wb http://127.0.0.1:7788/mcp/agy</code>. The pane URL is always <code>/mcp/&lt;id&gt;</code>, where the id is the name in lower case.</p>
+      <p class="muted" id="agentsPath"></p>
+    </div>
+  </section>
 
   <template id="paneTpl">
     <section class="pane">

@@ -1,12 +1,15 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, WebContentsView, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { startMcpHttp } from './mcpServer.js';
-import { AGENTS, runAgent } from './agents.js';
+import { loadAgents, saveAgents, runAgent, slug, CONFIG_PATH } from './agents.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.WORKBENCH_PORT || 7788);
+// Panes are built from the enabled agents in the config file; editing the list relaunches the app.
+const ALL_AGENTS = loadAgents();
+const AGENTS = Object.fromEntries(ALL_AGENTS.filter(a => a.enabled !== false).map(a => [a.id, a]));
 const PANE_IDS = Object.keys(AGENTS);
 const START_URL = 'https://www.google.com/';
 
@@ -69,8 +72,8 @@ ipcMain.on('task:run', (_e, { ids, task }) => {
   for (const id of ids) {
     if (running[id]) continue;
     send('pane:status', { id, status: 'working' });
-    running[id] = runAgent(id, `http://127.0.0.1:${PORT}/mcp/${id}`, task, {
-      onOut: text => send('pane:out', { id, text }),
+    running[id] = runAgent(AGENTS[id], `http://127.0.0.1:${PORT}/mcp/${id}`, task, {
+      onOut: (text, stream) => send('pane:out', { id, text, stream }),
       onExit: code => {
         delete running[id];
         send('pane:status', { id, status: code === 0 ? 'done' : 'error', code });
@@ -86,12 +89,38 @@ function stop(child) {
   else child.kill();
 }
 
+// The browsers are native views drawn over the page, so the compare board hides them while it is open.
+ipcMain.on('panes:visible', (_e, visible) => { for (const v of Object.values(views)) v.setVisible(visible); });
+
 ipcMain.on('task:stop', (_e, { id }) => stop(running[id]));
+
+// `npm start -- --task "..."` runs a task as soon as the window opens (handy for demos and scripts).
+const taskArg = process.argv.indexOf('--task');
+const START_TASK = taskArg > 0 ? process.argv[taskArg + 1] || '' : '';
 
 ipcMain.handle('config', () => ({
   port: PORT,
-  panes: PANE_IDS.map(id => ({ id, label: AGENTS[id].label }))
+  startTask: START_TASK,
+  panes: PANE_IDS.map(id => ({ id, label: AGENTS[id].label, color: AGENTS[id].color }))
 }));
+
+ipcMain.handle('agents:get', () => ({ path: CONFIG_PATH, agents: ALL_AGENTS }));
+ipcMain.on('agents:open', () => shell.openPath(CONFIG_PATH));
+ipcMain.on('agents:save', (_e, list) => {
+  const seen = new Set();
+  const clean = list.filter(a => a.label && a.command).map(a => {
+    let id = slug(a.id || a.label);
+    while (seen.has(id)) id += '-2';
+    seen.add(id);
+    return { id, label: String(a.label), color: a.color || '#666666', enabled: a.enabled !== false, command: String(a.command) };
+  });
+  if (!clean.length) return;
+  saveAgents(clean);
+  Object.values(running).forEach(stop);
+  // Relaunch without --task so the startup task does not run a second time.
+  app.relaunch({ args: process.argv.slice(1, taskArg > 0 ? taskArg : undefined) });
+  app.exit(0);
+});
 
 app.whenReady().then(() => {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
