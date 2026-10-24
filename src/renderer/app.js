@@ -2,10 +2,20 @@ const $ = (s, el = document) => el.querySelector(s);
 const panesEl = $('#panes');
 const els = {};
 const labels = {};
+const colors = {};
 
-// One record per agent for the current task; the compare board is drawn from these.
-let task = '';
-const runs = {};
+// The current run: one record per agent, each with a list of turns (first question + follow-ups).
+// The compare board, the status bar and the saved history are all drawn from this.
+let run = null;          // { id, task, started, agents: { id: { turns: [...] } } }
+let viewing = null;      // a run loaded from history, shown read-only on the board
+const runs = {};         // id -> live record for the current turn (status, timing, tools, visited, answer)
+
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
 
 function line(id, text, cls) {
   const log = $('.log', els[id]);
@@ -32,23 +42,50 @@ function sendLayout() {
   window.wb.layout(rects);
 }
 
-function selected() {
-  return [...document.querySelectorAll('#who input:checked')].map(i => i.value);
+const selected = () => [...document.querySelectorAll('#who input:checked')].map(i => i.value);
+const runId = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+const secs = r => ((r.end || Date.now()) - r.start) / 1000;
+const working = () => Object.values(runs).some(r => r.status === 'working');
+
+/* ---------- running tasks ---------- */
+
+function startTurn(ids, text, followUp) {
+  const previous = {};
+  if (!followUp || !run) {
+    run = { id: runId(), task: text, started: Date.now(), agents: {} };
+    for (const k of Object.keys(runs)) delete runs[k];
+  }
+  for (const id of ids) {
+    const prior = run.agents[id]?.turns || [];
+    if (followUp && prior.length) {
+      const last = prior[prior.length - 1];
+      previous[id] = `Q: ${last.q}\nA: ${last.answer}`;
+    }
+    runs[id] = { status: 'working', start: Date.now(), end: 0, tools: 0, visited: [], answer: '', q: text };
+    run.agents[id] = run.agents[id] || { turns: [] };
+    run.agents[id].turns.push(runs[id]);
+    if (!followUp) $('.log', els[id]).textContent = '';
+    line(id, `${followUp ? 'follow-up' : 'task'}: ${text}\n\n`, 'sys');
+  }
+  viewing = null;
+  updateCompareButton();
+  renderStatus();
+  window.wb.run(ids, text, followUp, previous);
 }
 
 function runTask() {
   const text = $('#task').value.trim();
   const ids = selected();
   if (!text || !ids.length) return;
-  task = text;
-  for (const k of Object.keys(runs)) delete runs[k];
-  for (const id of ids) {
-    runs[id] = { status: 'working', start: Date.now(), end: 0, tools: 0, visited: [], answer: '' };
-    $('.log', els[id]).textContent = '';
-    line(id, `task: ${text}\n\n`, 'sys');
-  }
-  updateCompareButton();
-  window.wb.run(ids, text);
+  const followUp = $('#followUp').checked && run && ids.every(id => run.agents[id]);
+  startTurn(ids, text, followUp);
+  $('#task').value = '';
+  $('#task').placeholder = 'Follow-up question, or a new task';
+}
+
+function persist() {
+  if (!run) return;
+  window.wb.saveRun(run);
 }
 
 /* ---------- status bar ---------- */
@@ -60,7 +97,7 @@ function renderStatus() {
   for (const id of Object.keys(els)) {
     const r = runs[id];
     const item = el('span', 'item');
-    const sw = el('span', 'sw'); sw.style.setProperty('--c', els[id].style.getPropertyValue('--c'));
+    const sw = el('span', 'sw'); sw.style.setProperty('--c', colors[id]);
     item.appendChild(sw);
     item.append(labels[id]);
     const status = els[id].dataset.status || 'idle';
@@ -69,12 +106,12 @@ function renderStatus() {
     bar.appendChild(item);
   }
   bar.appendChild(el('span', 'spacer'));
+  if (run) bar.appendChild(el('span', 'item', `run ${run.id}`));
   bar.appendChild(el('span', 'item', `MCP 127.0.0.1:${port}`));
 }
 
-/* ---------- full-window views (board, agents) ---------- */
+/* ---------- full-window views (board, history, agents) ---------- */
 
-// Only one of these is open at a time; while one is, the native browser views are hidden.
 let overlay = null;
 
 function openOverlay(id) {
@@ -94,16 +131,15 @@ function closeOverlay() {
   requestAnimationFrame(sendLayout);
 }
 
-/* ---------- compare board ---------- */
+/* ---------- answers: sources, plain text, consensus ---------- */
 
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
 const URL_RE = /https?:\/\/[^\s<>()\[\]"'`]+/g;
 const cleanUrl = u => u.replace(/[.,;:!?*]+$/, '');
 const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
-const secs = r => ((r.end || Date.now()) - r.start) / 1000;
 
 // Agents answer in Markdown; the table shows it as plain text without the markers.
-const plain = s => s.trim()
+const plain = s => (s || '').trim()
   .replace(/^#{1,6}\s+/gm, '')
   .replace(/\*\*(.+?)\*\*/g, '$1')
   .replace(/`([^`]+)`/g, '$1')
@@ -111,9 +147,59 @@ const plain = s => s.trim()
 
 function sources(r) {
   const cited = [...new Set((r.answer.match(URL_RE) || []).map(cleanUrl))];
-  const visited = r.visited.filter(u => !cited.includes(u) && !/^about:|google\.com\/?$/.test(u));
+  const visited = (r.visited || []).filter(u => !cited.includes(u) && !/^about:|google\.com\/?$/.test(u));
   return { cited, visited };
 }
+
+// Facts worth comparing across answers: numbers with their unit, dates, and cited hosts.
+// Rule based on purpose: no model call, so the agreement line is instant and free.
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function facts(answer) {
+  const t = plain(answer).replace(URL_RE, ' ');
+  const out = new Map(); // key -> display
+  const add = (key, display) => { if (!out.has(key)) out.set(key, display); };
+  // dates: 2026-10-21, 2026.10.21, 2026년 10월 21일, October 21, 2026, 21 Oct 2026
+  for (const m of t.matchAll(/(\d{4})[-./년]\s?(\d{1,2})[-./월]\s?(\d{1,2})일?/g)) add(`d:${m[1]}-${+m[2]}-${+m[3]}`, `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`);
+  for (const m of t.matchAll(/\b([A-Z][a-z]{2})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\b/g)) { const mo = MONTHS[m[1].toLowerCase()]; if (mo) add(`d:${m[3]}-${mo}-${+m[2]}`, `${m[3]}-${String(mo).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`); }
+  for (const m of t.matchAll(/\b(\d{1,2})\s+([A-Z][a-z]{2})[a-z]*\.?\s+(\d{4})\b/g)) { const mo = MONTHS[m[2].toLowerCase()]; if (mo) add(`d:${m[3]}-${mo}-${+m[1]}`, `${m[3]}-${String(mo).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`); }
+  // versions like v24.22.1 / 24.22.1
+  for (const m of t.matchAll(/\bv?(\d+\.\d+(?:\.\d+)+)\b/g)) add(`v:${m[1]}`, `v${m[1]}`);
+  // numbers with a unit or a following noun: 94 points, 1,402원, $12.5, 35%
+  for (const m of t.matchAll(/(?:[$€£₩]\s?)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(%|원|만원|억|points?|pts|명|건|개|회|달러|USD|KRW|km|kg|GB|MB|시간|분)?/g)) {
+    const raw = m[0].trim();
+    const n = m[1].replace(/,/g, '');
+    if (!m[2] && !/[$€£₩]/.test(raw)) continue;           // bare numbers are too noisy
+    if (/^\d{4}$/.test(n) && !m[2]) continue;               // years are handled as dates
+    add(`n:${n}${(m[2] || '').toLowerCase()}`, raw);
+  }
+  return out;
+}
+
+function consensus(ids) {
+  const per = ids.map(id => ({ id, f: facts(latest(id)?.answer || '') }));
+  const all = new Map();
+  for (const { id, f } of per) for (const [k, d] of f) { const e = all.get(k) || { display: d, ids: [] }; e.ids.push(id); all.set(k, e); }
+  const n = ids.length;
+  const agreed = [], partial = [], lone = [];
+  for (const [k, e] of all) {
+    const item = { key: k, display: e.display, ids: e.ids };
+    if (e.ids.length === n) agreed.push(item); else if (e.ids.length > 1) partial.push(item); else lone.push(item);
+  }
+  // A disagreement is the same kind of fact (a date, a version, points, 원 …) with different values
+  // from different agents, and no value of that kind that everyone shares. Extra dates one agent
+  // adds beside an agreed date are just extra detail.
+  const kind = k => k.split(':')[0] + ':' + (k.startsWith('n:') ? k.replace(/^n:[\d.]+/, '') : '');
+  const settled = new Set(agreed.map(it => kind(it.key)));
+  const byKind = {};
+  for (const it of [...partial, ...lone]) if (!settled.has(kind(it.key))) (byKind[kind(it.key)] = byKind[kind(it.key)] || []).push(it);
+  const conflicts = Object.values(byKind).filter(list => list.length > 1 && new Set(list.flatMap(i => i.ids)).size > 1);
+  return { agreed, partial, lone, conflicts };
+}
+
+const latest = id => { const t = (viewing || run)?.agents[id]?.turns; return t ? t[t.length - 1] : null; };
+const boardIds = () => Object.keys((viewing || run)?.agents || {});
+
+/* ---------- compare board ---------- */
 
 function updateCompareButton() {
   const ids = Object.keys(runs);
@@ -123,22 +209,65 @@ function updateCompareButton() {
   badge.hidden = !ids.length;
   badge.textContent = `${done}/${ids.length}`;
   btn.classList.toggle('ready', ids.length > 0 && done === ids.length);
+  $('#modeWrap').hidden = !run;
 }
 
-function el(tag, cls, text) {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (text != null) n.textContent = text;
-  return n;
+function renderConsensus(ids) {
+  const box = $('#consensus');
+  box.textContent = '';
+  if (ids.length < 2) return;
+  const c = consensus(ids);
+  const n = ids.length;
+  const row = (cls, title, items, fmt) => {
+    if (!items.length) return;
+    const r = el('div', `crow ${cls}`);
+    r.appendChild(el('b', null, title));
+    items.slice(0, 12).forEach((it, i) => { if (i) r.append(', '); r.appendChild(fmt(it)); });
+    if (items.length > 12) r.append(` and ${items.length - 12} more`);
+    box.appendChild(r);
+  };
+  row('ok', `Agreed by all ${n}:`, c.agreed, it => el('span', 'fact', it.display));
+  row('warn', 'Differs:', c.conflicts, list => {
+    const s = el('span', 'fact');
+    list.forEach((it, i) => { if (i) s.append(' vs '); s.append(`${it.display} (${it.ids.map(id => labels[id] || id).join(', ')})`); });
+    return s;
+  });
+  row('dim', 'Only one agent says:', c.lone.filter(it => !c.conflicts.flat().includes(it)), it => el('span', 'fact', `${it.display} (${labels[it.ids[0]] || it.ids[0]})`));
+  if (!c.agreed.length && !c.conflicts.length) box.appendChild(el('div', 'crow dim', 'No comparable numbers or dates found in the answers.'));
+
+  if (c.conflicts.length && !viewing) {
+    const judge = el('div', 'crow judge');
+    judge.append('Let one agent check the disagreement: ');
+    const sel = el('select');
+    for (const id of ids) { const o = el('option', null, labels[id]); o.value = id; sel.appendChild(o); }
+    const btn = el('button', null, 'Ask to verify');
+    btn.onclick = () => {
+      const lines = c.conflicts.map(list => list.map(it => `${it.display} according to ${it.ids.map(id => labels[id]).join(', ')}`).join(' vs '));
+      const cites = ids.map(id => `${labels[id]}: ${sources(latest(id)).cited.join(', ') || '(no URL)'}`).join('\n');
+      const q = `The agents disagree on: ${lines.join('; ')}. Open the sources below in your browser pane, check which value is right as of now, and answer with the verified value and the URL that shows it.\n${cites}`;
+      closeOverlay();
+      startTurn([sel.value], q, true);
+    };
+    judge.append(sel, ' ', btn);
+    box.appendChild(judge);
+  }
 }
 
 function renderBoard() {
-  $('#boardTask').textContent = task;
-  const ids = Object.keys(runs);
+  const src = viewing || run;
+  if (!src) return;
+  const ids = boardIds();
+  // The headline is the latest question; the first task stays in the kicker once there are follow-ups.
+  const turnCount = Math.max(...ids.map(id => src.agents[id].turns.length));
+  const lastQ = ids.map(id => latest(id)).sort((a, b) => b.start - a.start)[0]?.q || src.task;
+  $('#boardKicker').textContent = `${viewing ? `History · ${viewing.id}` : 'Compare'}${turnCount > 1 ? ` · turn ${turnCount} · first task: ${src.task}` : ''}`;
+  $('#boardTask').textContent = lastQ;
+  $('#exportMd').disabled = false;
+  renderConsensus(ids);
 
   // Sites that more than one agent cited are the quickest signal of agreement.
   const byHost = {};
-  for (const id of ids) for (const u of sources(runs[id]).cited) {
+  for (const id of ids) for (const u of sources(latest(id)).cited) {
     const h = host(u); if (!h) continue;
     (byHost[h] = byHost[h] || new Set()).add(id);
   }
@@ -149,7 +278,7 @@ function renderBoard() {
     sharedEl.append('Cited by more than one agent: ');
     shared.forEach(([h, s], i) => {
       if (i) sharedEl.append(', ');
-      sharedEl.append(el('b', null, h), ` (${[...s].map(id => labels[id]).join(', ')})`);
+      sharedEl.append(el('b', null, h), ` (${[...s].map(id => labels[id] || id).join(', ')})`);
     });
   }
 
@@ -159,8 +288,8 @@ function renderBoard() {
   head.appendChild(el('th'));
   for (const id of ids) {
     const th = el('th');
-    const name = el('span', 'col-name', labels[id]);
-    name.style.setProperty('--c', els[id].style.getPropertyValue('--c'));
+    const name = el('span', 'col-name', labels[id] || id);
+    name.style.setProperty('--c', colors[id] || '#888');
     th.appendChild(name);
     head.appendChild(th);
   }
@@ -170,7 +299,7 @@ function renderBoard() {
   const row = (label, cell) => {
     const tr = el('tr');
     tr.appendChild(el('th', null, label));
-    for (const id of ids) { const td = el('td'); cell(td, runs[id], id); tr.appendChild(td); }
+    for (const id of ids) { const td = el('td'); cell(td, latest(id), id); tr.appendChild(td); }
     body.appendChild(tr);
   };
   const linkList = (td, urls, cls, id) => {
@@ -178,8 +307,8 @@ function renderBoard() {
     for (const u of urls) {
       const a = el('a', `src ${cls}`, u);
       a.href = '#';
-      a.title = `Open in ${labels[id]}'s pane`;
-      a.onclick = e => { e.preventDefault(); closeOverlay(); window.wb.go(id, u); };
+      a.title = `Open in ${labels[id] || id}'s pane`;
+      a.onclick = e => { e.preventDefault(); if (els[id]) { closeOverlay(); window.wb.go(id, u); } };
       td.appendChild(a);
     }
   };
@@ -187,32 +316,112 @@ function renderBoard() {
   row('Status', (td, r) => { td.textContent = r.status; td.className = `st-${r.status}`; });
   row('Time', (td, r) => { td.textContent = `${secs(r).toFixed(0)} s`; td.className = 'num'; });
   row('Tool calls', (td, r) => { td.textContent = r.tools; td.className = 'num'; });
-  row('Pages opened', (td, r) => { td.textContent = r.visited.length; td.className = 'num'; });
-  row('Answer', (td, r) => td.appendChild(el('div', 'answer',
-    plain(r.answer) || (r.status === 'working' ? 'Still working.' : 'Nothing on stdout.'))));
+  row('Pages opened', (td, r) => { td.textContent = (r.visited || []).length; td.className = 'num'; });
+  row('Answer', (td, r) => td.appendChild(el('div', 'answer', plain(r.answer) || (r.status === 'working' ? 'Still working.' : 'Nothing on stdout.'))));
   row('Cited', (td, r, id) => linkList(td, sources(r).cited, 'cited', id));
   row('Opened, not cited', (td, r, id) => linkList(td, sources(r).visited, 'visited', id));
+  if (!viewing) {
+    row('Ask this agent', (td, r, id) => {
+      const form = el('form', 'ask');
+      const input = el('input'); input.placeholder = `Follow-up for ${labels[id]} only`;
+      const btn = el('button', null, 'Send');
+      form.append(input, btn);
+      form.onsubmit = e => { e.preventDefault(); const q = input.value.trim(); if (!q || runs[id]?.status === 'working') return; closeOverlay(); startTurn([id], q, true); };
+      td.appendChild(form);
+    });
+  }
+
+  // Earlier turns of this run, oldest first, so the follow-up chain reads top to bottom.
+  const turnsEl = $('#turns');
+  turnsEl.textContent = '';
+  const maxTurns = Math.max(...ids.map(id => src.agents[id].turns.length));
+  if (maxTurns > 1) {
+    turnsEl.appendChild(el('div', 'kicker', 'Earlier turns'));
+    for (let i = 0; i < maxTurns - 1; i++) {
+      for (const id of ids) {
+        const t = src.agents[id].turns[i];
+        if (!t) continue;
+        const d = el('details', 'turn');
+        const sm = el('summary');
+        sm.append(el('b', null, labels[id] || id), ` · turn ${i + 1} · `, el('span', 'q', t.q));
+        d.append(sm, el('div', 'answer', plain(t.answer)));
+        turnsEl.appendChild(d);
+      }
+    }
+  }
 }
 
 function boardMarkdown() {
-  const ids = Object.keys(runs);
+  const src = viewing || run;
+  const ids = boardIds();
+  const c = consensus(ids);
   const rows = [
-    `**Task:** ${task}`, '',
-    `| | ${ids.map(id => labels[id]).join(' | ')} |`,
-    `|---|${ids.map(() => '---').join('|')}|`,
-    `| Status | ${ids.map(id => runs[id].status).join(' | ')} |`,
-    `| Time | ${ids.map(id => `${secs(runs[id]).toFixed(0)}s`).join(' | ')} |`,
-    `| Tool calls | ${ids.map(id => runs[id].tools).join(' | ')} |`,
-    `| Sources | ${ids.map(id => sources(runs[id]).cited.join('<br>') || '-').join(' | ')} |`
+    `# ${src.task}`, '',
+    `- Run: ${src.id} · ${new Date(src.started).toLocaleString()}`,
+    `- Agents: ${ids.map(id => labels[id] || id).join(', ')}`, ''
   ];
-  for (const id of ids) rows.push('', `### ${labels[id]}`, '', runs[id].answer.trim() || '_no answer_');
-  return rows.join('\n');
+  if (ids.length > 1) {
+    rows.push('## Agreement', '');
+    if (c.agreed.length) rows.push(`- Agreed by all ${ids.length}: ${c.agreed.map(i => i.display).join(', ')}`);
+    for (const list of c.conflicts) rows.push(`- Differs: ${list.map(it => `${it.display} (${it.ids.map(id => labels[id] || id).join(', ')})`).join(' vs ')}`);
+    if (!c.agreed.length && !c.conflicts.length) rows.push('- No comparable numbers or dates found.');
+    rows.push('');
+  }
+  rows.push(
+    `| | ${ids.map(id => labels[id] || id).join(' | ')} |`,
+    `|---|${ids.map(() => '---').join('|')}|`,
+    `| Status | ${ids.map(id => latest(id).status).join(' | ')} |`,
+    `| Time | ${ids.map(id => `${secs(latest(id)).toFixed(0)}s`).join(' | ')} |`,
+    `| Tool calls | ${ids.map(id => latest(id).tools).join(' | ')} |`,
+    `| Sources | ${ids.map(id => sources(latest(id)).cited.join('<br>') || '-').join(' | ')} |`
+  );
+  for (const id of ids) {
+    rows.push('', `## ${labels[id] || id}`);
+    src.agents[id].turns.forEach((t, i) => {
+      if (src.agents[id].turns.length > 1) rows.push('', `### Turn ${i + 1}: ${t.q}`);
+      rows.push('', (t.answer || '').trim() || '_no answer_');
+    });
+  }
+  return rows.join('\n') + '\n';
+}
+
+function exportName() {
+  const src = viewing || run;
+  const date = new Date(src.started);
+  const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const topic = src.task.replace(/https?:\/\/\S+/g, '').replace(/[\\/:*?"<>|]+/g, ' ').trim().split(/\s+/).slice(0, 5).join(' ').slice(0, 40) || 'task';
+  return `${ymd}_조사_${topic}_검토용.md`;
 }
 
 function openBoard() {
-  if (!Object.keys(runs).length) return;
+  if (!run && !viewing) return;
   renderBoard();
   openOverlay('#board');
+}
+
+/* ---------- history ---------- */
+
+async function openHistory() {
+  const list = await window.wb.listRuns();
+  const tbody = $('#historyRows');
+  tbody.textContent = '';
+  $('#historyEmpty').hidden = list.length > 0;
+  for (const r of list) {
+    const tr = el('tr');
+    tr.appendChild(el('td', 'c-when', new Date(r.started).toLocaleString()));
+    tr.appendChild(el('td', null, r.task));
+    tr.appendChild(el('td', 'c-agents', r.agents.map(id => labels[id] || id).join(', ')));
+    tr.appendChild(el('td', 'c-turns num', String(r.turns)));
+    const act = el('td', 'c-act');
+    const open = el('button', null, 'Open');
+    open.onclick = async () => { viewing = await window.wb.loadRun(r.id); if (viewing) { renderBoard(); openOverlay('#board'); } };
+    const again = el('button', null, 'Run again');
+    again.onclick = () => { closeOverlay(); $('#task').value = r.task; $('#followUp').checked = false; $('#task').focus(); };
+    act.append(open, ' ', again);
+    tr.appendChild(act);
+    tbody.appendChild(tr);
+  }
+  openOverlay('#historyView');
 }
 
 /* ---------- agents editor ---------- */
@@ -227,12 +436,15 @@ function agentRow(a, i) {
   color.oninput = () => { draft[i].color = color.value; };
   const name = el('input', 'txt'); name.value = a.label || ''; name.placeholder = 'Gemini CLI';
   name.oninput = () => { draft[i].label = name.value; };
-  const cmd = el('input', 'txt mono'); cmd.value = a.command || ''; cmd.placeholder = 'mycli -p {prompt}';
-  cmd.spellcheck = false;
+  const cmds = el('div', 'cmds');
+  const cmd = el('input', 'txt mono'); cmd.value = a.command || ''; cmd.placeholder = 'mycli -p {prompt}'; cmd.spellcheck = false;
   cmd.oninput = () => { draft[i].command = cmd.value; };
+  const fu = el('input', 'txt mono dim'); fu.value = a.followUp || ''; fu.placeholder = 'follow-up command (optional), e.g. mycli --continue -p {prompt}'; fu.spellcheck = false;
+  fu.oninput = () => { draft[i].followUp = fu.value; };
+  cmds.append(cmd, fu);
   const del = el('button', null, 'Remove');
   del.onclick = () => { draft.splice(i, 1); renderAgents(); };
-  for (const [node, cls] of [[on, 'c-on'], [color, 'c-color'], [name, 'c-name'], [cmd, ''], [del, 'c-del']]) {
+  for (const [node, cls] of [[on, 'c-on'], [color, 'c-color'], [name, 'c-name'], [cmds, ''], [del, 'c-del']]) {
     const td = el('td', cls); td.appendChild(node); tr.appendChild(td);
   }
   return tr;
@@ -271,8 +483,9 @@ async function init() {
   panesEl.style.gridTemplateColumns = `repeat(${cfg.panes.length}, minmax(0, 1fr))`;
   for (const p of cfg.panes) {
     labels[p.id] = p.label;
+    colors[p.id] = p.color || '#666666';
     const node = tpl.content.firstElementChild.cloneNode(true);
-    node.style.setProperty('--c', p.color || '#666666');
+    node.style.setProperty('--c', colors[p.id]);
     $('.name', node).textContent = p.label;
     $('.stop', node).onclick = () => window.wb.stop(p.id);
     $('.addr', node).onsubmit = e => { e.preventDefault(); window.wb.go(p.id, $('.url', node).value.trim()); };
@@ -288,8 +501,12 @@ async function init() {
   const refresh = () => {
     updateCompareButton();
     renderStatus();
-    if (overlay === '#board') renderBoard();
-    else if (cfg.autoCompare && Object.values(runs).every(r => r.status !== 'working')) setTimeout(openBoard, 2000);
+    if (overlay === '#board' && !viewing) renderBoard();
+    if (!working()) {
+      persist();
+      if (run) window.wb.notify('Agent Workbench', `All agents finished: ${run.task.slice(0, 80)}`);
+      if (cfg.autoCompare && overlay !== '#board') setTimeout(openBoard, 2000);
+    }
   };
 
   window.wb.on('pane:url', ({ id, url }) => {
@@ -317,6 +534,7 @@ async function init() {
   window.wb.on('pane:approval', ({ id, approvalId, question }) => {
     const prev = els[id].dataset.status;
     setStatus(id, 'waiting', 'needs your approval');
+    window.wb.notify(`${labels[id]} needs approval`, question);
     const card = document.createElement('div');
     card.className = 'approval';
     card.innerHTML = `<div class="q"></div><div class="btns"><button class="yes">Allow</button><button class="no">Block</button></div>`;
@@ -337,17 +555,24 @@ async function init() {
   });
 
   $('#runAll').onclick = runTask;
-  $('#compare').onclick = openBoard;
+  $('#compare').onclick = () => { viewing = null; openBoard(); };
   $('#closeBoard').onclick = closeOverlay;
   $('#copyMd').onclick = async () => {
     await navigator.clipboard.writeText(boardMarkdown());
     $('#copyMd').textContent = 'Copied';
     setTimeout(() => { $('#copyMd').textContent = 'Copy as Markdown'; }, 1500);
   };
+  $('#exportMd').onclick = async () => {
+    const file = await window.wb.exportRun(exportName(), boardMarkdown());
+    if (file) { $('#exportMd').textContent = 'Saved'; setTimeout(() => { $('#exportMd').textContent = 'Export .md'; }, 2000); }
+  };
+  $('#openHistory').onclick = openHistory;
+  $('#closeHistory').onclick = closeOverlay;
+  $('#openRunsFolder').onclick = () => window.wb.openRunsFolder();
   $('#openAgents').onclick = openAgents;
   $('#cancelAgents').onclick = closeOverlay;
   $('#openFile').onclick = () => window.wb.openAgentsFile();
-  $('#addAgent').onclick = () => { draft.push({ label: '', color: '#666666', enabled: true, command: '' }); renderAgents(); };
+  $('#addAgent').onclick = () => { draft.push({ label: '', color: '#666666', enabled: true, command: '', followUp: '' }); renderAgents(); };
   $('#saveAgents').onclick = () => {
     const list = draft.filter(a => a.label.trim() && a.command.trim());
     if (!list.some(a => a.enabled !== false)) { $('#saveAgents').textContent = 'Turn on at least one'; return; }
@@ -364,9 +589,9 @@ async function init() {
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
   setInterval(() => {
-    if (!Object.values(runs).some(r => r.status === 'working')) return;
+    if (!working()) return;
     renderStatus();
-    if (overlay === '#board') renderBoard();
+    if (overlay === '#board' && !viewing) renderBoard();
   }, 1000);
   renderStatus();
   new ResizeObserver(sendLayout).observe(panesEl);

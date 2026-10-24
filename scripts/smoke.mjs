@@ -1,5 +1,5 @@
 // Runs one small web task through each agent CLI against a running workbench (npm start first).
-import { loadAgents, runAgent } from '../src/agents.js';
+import { loadAgents, runAgent, newSession } from '../src/agents.js';
 const AGENTS = Object.fromEntries(loadAgents().filter(a => a.enabled !== false).map(a => [a.id, a]));
 const port = process.env.WORKBENCH_PORT || 7788;
 const ids = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(AGENTS);
@@ -7,7 +7,7 @@ const task = 'Open https://news.ycombinator.com and tell me the title of the #1 
 await Promise.all(ids.map(id => new Promise(done => {
   let out = '';
   const t0 = Date.now();
-  runAgent(AGENTS[id], `http://127.0.0.1:${port}/mcp/${id}`, task, {
+  runAgent(AGENTS[id], `http://127.0.0.1:${port}/mcp/${id}`, task, { session: newSession() }, {
     onOut: s => { out += s; },
     onExit: code => { console.log(`\n===== ${id} exit=${code} ${(Date.now() - t0) / 1000}s =====\n${out.slice(-1500)}`); done(); }
   });

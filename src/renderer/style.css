@@ -174,3 +174,43 @@ code { color: var(--orange); font-family: var(--mono); }
 .cmp.ph { width: auto; }
 .cmp.ph th { width: auto; }
 .muted { color: var(--dim); }
+
+/* follow-up toggle inside the prompt box */
+.prompt-box { flex-wrap: wrap; }
+.prompt-box .mode { flex-basis: 100%; font: 11px var(--ui); color: var(--dim); display: flex; gap: 5px; align-items: center; margin-top: 2px; }
+.prompt-box .mode input { accent-color: var(--orange); margin: 0; }
+
+/* agreement line on the compare board */
+#consensus { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+#consensus:empty { display: none; }
+.crow { font: 12.5px var(--mono); color: var(--dim); }
+.crow b { font-weight: 600; margin-right: 6px; }
+.crow.ok b { color: var(--green); }
+.crow.warn b { color: var(--red); }
+.crow.ok .fact { color: var(--ink); }
+.crow.warn .fact { color: var(--ink); }
+.crow.judge { margin-top: 4px; font-family: var(--ui); display: flex; gap: 6px; align-items: center; }
+.crow.judge select { font: 12px var(--ui); background: var(--field); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+
+/* per-agent follow-up and earlier turns */
+.ask { display: flex; gap: 4px; }
+.ask input { flex: 1; min-width: 0; font: 12px var(--mono); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: var(--field); color: var(--ink); }
+.ask input:focus { outline: 0; border-color: #5c6370; }
+#turns { margin-top: 14px; }
+.turn { border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; background: var(--bg); }
+.turn summary { cursor: pointer; padding: 6px 10px; font: 12px var(--ui); color: var(--dim); }
+.turn summary b { color: var(--ink); }
+.turn summary .q { color: var(--ink); font-family: var(--mono); }
+.turn .answer { padding: 6px 10px 10px; max-height: 30vh; }
+
+/* history */
+#historyView { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 22px; background: var(--bg); }
+.history .c-when { width: 200px; white-space: nowrap; }
+.history .c-agents { width: 260px; }
+.history .c-turns { width: 60px; }
+.history .c-act { width: 150px; white-space: nowrap; }
+.history td { vertical-align: middle; }
+
+/* agents editor: two command lines per agent */
+.cmds { display: flex; flex-direction: column; gap: 4px; }
+.agents input.txt.dim { color: var(--dim); }

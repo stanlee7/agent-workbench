@@ -8,7 +8,9 @@ Agent Workbench puts AI agents next to each other: Claude Code, Codex and Antigr
 
 - **Its own browser per agent.** Each pane has a separate persistent profile, so cookies never mix between agents. Sign in to a site in a pane once, and that agent can work there.
 - **You see everything.** Every tool call (`navigate`, `read_page`, `click`, `type` …) shows up live under the pane.
-- **Compare board.** When the agents finish, one click lines up every answer side by side with time, tool calls, pages visited and the URLs each one cited. Sites cited by more than one agent are flagged, and the whole board copies out as Markdown.
+- **Compare board with an agreement line.** When the agents finish, one click lines up every answer side by side with time, tool calls, pages visited and the URLs each one cited. Numbers, dates and versions are pulled out of the answers and matched across agents, so the board opens with `Agreed by all 4: v24.22.1, 2026-10-21` or `Differs: 94 points (Claude Code, Codex) vs 93 points (Antigravity)`. One button sends the disagreement to an agent of your choice to verify in its browser.
+- **Follow-up questions.** Each pane keeps its CLI session, so "and the previous LTS?" goes back into the same conversation (`claude --resume`, `codex exec resume`, `agy --continue`). Ask all agents at once, or one agent from its column on the board.
+- **History and export.** Every run is saved on your machine and can be reopened or run again. The board exports as a Markdown file ready for your notes.
 - **Bring your own agents.** Agents are command lines in `agents.json`. Add another CLI, or the same CLI with a different model (`claude --model haiku`), from the Agents screen. Each gets its own pane.
 - **Risky clicks wait for you.** Buttons that look like submit, pay, send, post or delete pause the agent and show an approval card. Password fields are refused outright.
 - **Uses the subscriptions you already have.** The app launches the official CLIs (`claude`, `codex`, `agy`), so there are no API keys to paste and no extra billing.
@@ -34,9 +36,14 @@ Tools each agent gets:
 | Tool | What it does |
 |---|---|
 | `navigate(url)` | Open a URL |
-| `read_page()` | URL, title, visible text, and numbered interactive elements |
+| `read_page(offset?)` | URL, title, visible text (6,000 characters a call; `offset` reads on), and numbered interactive elements |
 | `click(id)` | Real mouse click on element `id` (risky buttons ask you first) |
 | `type(id, text, submit?)` | Type into an input, optionally press Enter (passwords refused) |
+| `select(id, value)` | Pick an option in a dropdown |
+| `press(key)` | Enter, Escape, Tab, arrows, Page Up/Down (Enter inside a form asks you first) |
+| `wait(text?, seconds?)` | Wait for text to appear on slow pages |
+| `find(text)` | Scroll to the first occurrence of some text |
+| `extract_table(index?)` | List the tables on a page, or get one as Markdown |
 | `scroll(direction)` / `back()` | Move around |
 | `screenshot()` | JPEG of the pane, for when text is not enough |
 
@@ -78,6 +85,9 @@ Placeholders in a command:
 | `{url}` | this pane's MCP endpoint, e.g. `http://127.0.0.1:7788/mcp/claude-haiku` |
 | `{mcpConfig}` | path to a generated `mcp.json` with that endpoint as server `wb` |
 | `{prompt}` | the task as a single argument. Without it, the task goes in on stdin |
+| `{session}` | a UUID made for each new task, so a follow-up can resume the same session |
+
+Each agent has an optional second command for follow-ups. For the bundled CLIs it is filled in for you (`claude -p --resume {session}`, `codex exec resume --last`, `agy --continue`). Without one, the earlier answer is pasted into the next prompt instead of resuming.
 
 Examples:
 
@@ -89,6 +99,13 @@ Examples:
 A CLI that only reads MCP servers from its own settings needs the pane registered once, the way Antigravity does above. The pane's id is its name in lower case, and its endpoint is `/mcp/<id>`.
 
 The task bar can sit at the top or the bottom of the window: **Bar at bottom / Bar at top** in the toolbar. The choice is remembered.
+
+## Follow-ups, history, export
+
+- After a run, tick **Follow-up in the same session** and ask again; every checked agent continues its own session. The compare board's **Ask this agent** row sends a follow-up to one agent only.
+- **History** lists past runs (saved as JSON in `~/.agent-workbench/runs/`). Open one to see its board, or **Run again** to put the task back in the prompt.
+- **Export .md** saves the board, with the agreement line and every turn, as a Markdown file. The folder you pick is remembered.
+- A desktop notification tells you when an agent is waiting for approval or every agent has finished while the window is in the background.
 
 ## Record a demo
 
@@ -118,14 +135,16 @@ npm run smoke -- claude  # just one
 ## Roadmap
 
 - [x] Compare board: answers and source URLs from all agents in one table
-- [ ] Interactive terminal per pane (node-pty) instead of one-shot runs
+- [x] Follow-up questions in the same session
+- [x] Run history and Markdown export
+- [x] Agreement line across answers
 - [x] Any MCP-capable CLI as a pluggable agent (`agents.json`)
 - [ ] Ready-made presets for more CLIs (Gemini CLI, Aider, …)
 - [ ] macOS build
 
 ## 한국어 요약
 
-AI 에이전트(기본 Claude Code, Codex, Antigravity, 그리고 직접 추가한 CLI나 모델)를 한 화면에 띄우고, 에이전트마다 자기 전용 브라우저 칸을 MCP로 연결한 데스크톱 앱입니다. 질문 하나를 여러 에이전트에게 동시에 주고, 끝나면 비교판(Compare)에서 답, 걸린 시간, 도구 호출 수, 인용한 출처를 나란히 봅니다. 둘 이상이 인용한 사이트는 따로 표시하고, 비교판 전체를 마크다운으로 복사할 수 있습니다. 클릭 하나하나가 화면에 보이고, 제출, 결제, 발송, 게시, 삭제 같은 버튼은 사람이 승인해야 눌립니다. 각자 쓰는 구독(CLI 로그인)을 그대로 쓰므로 API 키가 필요 없습니다.
+AI 에이전트(기본 Claude Code, Codex, Antigravity, 그리고 직접 추가한 CLI나 모델)를 한 화면에 띄우고, 에이전트마다 자기 전용 브라우저 칸을 MCP로 연결한 데스크톱 앱입니다. 질문 하나를 여러 에이전트에게 동시에 주고, 끝나면 비교판(Compare)에서 답, 걸린 시간, 도구 호출 수, 인용한 출처를 나란히 봅니다. 답에서 숫자, 날짜, 버전을 뽑아 몇 에이전트가 일치하는지 「합의 줄」로 보여 주고, 어긋나는 값은 한 에이전트에게 다시 확인시킬 수 있습니다. 후속 질문은 같은 세션으로 이어지고, 실행 기록은 PC에 저장되며, 비교판은 마크다운 파일로 내보냅니다. 클릭 하나하나가 화면에 보이고, 제출, 결제, 발송, 게시, 삭제 같은 버튼은 사람이 승인해야 눌립니다. 각자 쓰는 구독(CLI 로그인)을 그대로 쓰므로 API 키가 필요 없습니다.
 
 ## License
 

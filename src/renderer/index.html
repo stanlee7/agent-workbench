@@ -9,10 +9,15 @@
 <body>
   <header class="bar">
     <div class="brand">Agent<b>Workbench</b></div>
-    <div class="prompt-box"><span class="caret">›</span><textarea id="task" rows="2" placeholder="One task for every checked agent. Enter to run, Shift+Enter for a new line"></textarea></div>
+    <div class="prompt-box">
+      <span class="caret">›</span>
+      <textarea id="task" rows="2" placeholder="One task for every checked agent. Enter to run, Shift+Enter for a new line"></textarea>
+      <label class="mode" id="modeWrap" hidden><input type="checkbox" id="followUp"> Follow-up in the same session</label>
+    </div>
     <div class="who" id="who"></div>
     <button id="runAll" class="primary" title="Enter">Run</button>
     <button id="compare" disabled>Compare <span class="badge" hidden></span></button>
+    <button id="openHistory">History</button>
     <button id="openAgents">Agents</button>
     <button id="dock" title="Move the task bar to the other edge">Bar at bottom</button>
   </header>
@@ -21,16 +26,37 @@
   <section id="board" hidden>
     <div class="board-head">
       <div>
-        <div class="kicker">Compare</div>
+        <div class="kicker" id="boardKicker">Compare</div>
         <h2 id="boardTask"></h2>
       </div>
       <div class="board-actions">
+        <button id="exportMd">Export .md</button>
         <button id="copyMd">Copy as Markdown</button>
         <button id="closeBoard" class="primary">Back to panes</button>
       </div>
     </div>
+    <div id="consensus"></div>
     <div id="shared"></div>
     <table class="cmp" id="cols"></table>
+    <div id="turns"></div>
+  </section>
+
+  <section id="historyView" hidden>
+    <div class="board-head">
+      <div>
+        <div class="kicker">History</div>
+        <h2>Past runs on this machine</h2>
+      </div>
+      <div class="board-actions">
+        <button id="openRunsFolder">Open folder</button>
+        <button id="closeHistory" class="primary">Back to panes</button>
+      </div>
+    </div>
+    <table class="cmp history">
+      <thead><tr><th class="c-when">When</th><th>Task</th><th class="c-agents">Agents</th><th class="c-turns">Turns</th><th class="c-act"></th></tr></thead>
+      <tbody id="historyRows"></tbody>
+    </table>
+    <p class="muted" id="historyEmpty" hidden>No runs yet. Every finished run is saved here automatically.</p>
   </section>
 
   <section id="agentsView" hidden>
@@ -46,7 +72,7 @@
       </div>
     </div>
     <table class="cmp agents">
-      <thead><tr><th class="c-on">On</th><th class="c-color">Colour</th><th class="c-name">Name</th><th>Command</th><th class="c-del"></th></tr></thead>
+      <thead><tr><th class="c-on">On</th><th class="c-color">Colour</th><th class="c-name">Name</th><th>Command (first question) / Follow-up command</th><th class="c-del"></th></tr></thead>
       <tbody id="agentRows"></tbody>
     </table>
     <p><button id="addAgent">Add agent</button></p>
@@ -56,8 +82,10 @@
         <tr><th><code>{url}</code></th><td>this pane's MCP endpoint, for CLIs that take a server URL on the command line</td></tr>
         <tr><th><code>{mcpConfig}</code></th><td>path to a generated <code>mcp.json</code> (<code>{"mcpServers":{"wb":{"type":"http","url":…}}}</code>)</td></tr>
         <tr><th><code>{prompt}</code></th><td>the task as one argument. Leave it out and the task goes in through stdin.</td></tr>
+        <tr><th><code>{session}</code></th><td>a UUID made for each new task. Put it in both commands so the follow-up resumes the same session (<code>claude --session-id</code> / <code>--resume</code>).</td></tr>
       </table>
-      <p>CLIs that only read MCP servers from their own settings need the pane registered once, as Antigravity does:
+      <p>The follow-up command is optional. Without one, the earlier answer is pasted into the next prompt instead of resuming.
+        CLIs that only read MCP servers from their own settings need the pane registered once, as Antigravity does:
         <code>agy mcp add wb http://127.0.0.1:7788/mcp/agy</code>. The pane URL is always <code>/mcp/&lt;id&gt;</code>, where the id is the name in lower case.</p>
       <p class="muted" id="agentsPath"></p>
     </div>
