@@ -6,7 +6,10 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
   },
   "keywords": [
     "electron",
@@ -21,12 +24,60 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "electron": "^38.8.6",
     "zod": "^4.6.7"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/stanlee7/agent-workbench.git"
   },
-  "homepage": "https://github.com/stanlee7/agent-workbench#readme"
+  "homepage": "https://github.com/stanlee7/agent-workbench#readme",
+  "devDependencies": {
+    "electron-builder": "^26.18.0",
+    "electron": "^38.8.6"
+  },
+  "build": {
+    "appId": "dev.stanlee7.agent-workbench",
+    "productName": "Agent Workbench",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "src/**",
+      "build/icon.png",
+      "package.json",
+      "LICENSE"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Agent Workbench"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "publish": null
+  }
 }

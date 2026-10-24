@@ -243,6 +243,7 @@ app.whenReady().then(() => {
     width: Math.min(1600, width),
     height: Math.min(980, height),
     title: 'Agent Workbench',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     autoHideMenuBar: true,
     backgroundColor: '#171717',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs') }

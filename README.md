@@ -47,7 +47,15 @@ Tools each agent gets:
 | `scroll(direction)` / `back()` | Move around |
 | `screenshot()` | JPEG of the pane, for when text is not enough |
 
-## Run it
+## Install
+
+**Windows:** download `Agent Workbench-<version>-win-x64.exe` from [Releases](https://github.com/stanlee7/agent-workbench/releases) and run it. The installer is not code-signed, so SmartScreen shows "Windows protected your PC": click **More info**, then **Run anyway**. It installs per user, no admin needed.
+
+**macOS:** no build yet. Run from source below (it should work; it has not been tested).
+
+Either way you still need the CLIs you want to use, installed and signed in (`claude`, `codex`, `agy`). The app only launches them.
+
+## Run from source
 
 Requirements: Node 20+, and whichever CLIs you use, already signed in (`claude`, `codex`, `agy`).
 
@@ -142,6 +150,15 @@ WORKBENCH_RECORD=./frames WORKBENCH_RECORD_SECONDS=120 npm start -- --task "What
 
 Frames land in `./frames` as JPEGs, and the compare board opens by itself when every agent is done. `docs/demo.gif` was made this way.
 
+## Build an installer
+
+Output lands in `dist/`:
+
+```bash
+npm run dist:win   # Windows NSIS installer
+npm run dist:mac   # macOS dmg, on a Mac
+```
+
 ## Smoke test
 
 With the app running:
@@ -165,6 +182,7 @@ npm run smoke -- claude  # just one
 - [x] Agreement line across answers
 - [x] Any MCP-capable CLI as a pluggable agent (`agents.json`)
 - [ ] Ready-made presets for more CLIs (Gemini CLI, Aider, …)
+- [x] Windows installer
 - [ ] macOS build
 
 ## 한국어 요약
