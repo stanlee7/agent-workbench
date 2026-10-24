@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { startMcpHttp } from './mcpServer.js';
 import { startRecorder } from './recorder.js';
 import { loadAgents, saveAgents, runAgent, newSession, slug, CONFIG_PATH } from './agents.js';
+import { CLEAN, profileList, profileOf, setProfile, addProfile, partitionFor, signedInHosts } from './profiles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.WORKBENCH_PORT || 7788);
@@ -16,6 +17,13 @@ const AGENTS = Object.fromEntries(ALL_AGENTS.filter(a => a.enabled !== false).ma
 const PANE_IDS = Object.keys(AGENTS);
 const START_URL = 'https://www.google.com/';
 
+const DATA_DIR = path.dirname(CONFIG_PATH);
+const RUNS_DIR = path.join(DATA_DIR, 'runs');
+const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+const readJson = (p, fallback) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } };
+const settings = readJson(SETTINGS_PATH, {});
+const saveSettings = () => { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2)); };
+
 let win;
 const views = {};      // paneId -> WebContentsView
 const running = {};    // paneId -> child process
@@ -24,20 +32,43 @@ let approvalSeq = 0;
 
 const send = (ch, payload) => win && !win.isDestroyed() && win.webContents.send(ch, payload);
 
-function createPanes() {
-  for (const id of PANE_IDS) {
-    // Separate persistent profile per pane: logins you make in one pane stay in that pane.
-    const view = new WebContentsView({ webPreferences: { partition: `persist:pane-${id}` } });
-    win.contentView.addChildView(view);
-    view.webContents.loadURL(START_URL);
-    const report = () => send('pane:url', { id, url: view.webContents.getURL(), title: view.webContents.getTitle() });
-    view.webContents.on('did-navigate', report);
-    view.webContents.on('did-navigate-in-page', report);
-    view.webContents.on('page-title-updated', report);
-    // Popups open in the same pane so the agent never loses track of them.
-    view.webContents.setWindowOpenHandler(({ url }) => { view.webContents.loadURL(url); return { action: 'deny' }; });
-    views[id] = view;
-  }
+const bounds = {};    // paneId -> last layout rect from the renderer
+const logins = {};    // paneId -> hosts the pane's browser looks signed in to
+
+async function reportLogins(id) {
+  const v = views[id]; if (!v) return;
+  const hosts = await signedInHosts(v.webContents.session);
+  if (views[id] !== v) return; // the pane was swapped while we looked
+  logins[id] = hosts;
+  send('pane:logins', { id, hosts });
+}
+
+// Each pane is a WebContentsView on the cookie jar of its profile. Changing the profile means a new
+// view, because a partition is fixed when the view is made.
+function createPane(id, url = START_URL) {
+  const partition = partitionFor(id, profileOf(settings, id));
+  const view = new WebContentsView({ webPreferences: { partition } });
+  win.contentView.addChildView(view);
+  if (bounds[id]) view.setBounds(bounds[id]);
+  view.webContents.loadURL(url);
+  const report = () => send('pane:url', { id, url: view.webContents.getURL(), title: view.webContents.getTitle() });
+  view.webContents.on('did-navigate', report);
+  view.webContents.on('did-navigate-in-page', report);
+  view.webContents.on('page-title-updated', report);
+  view.webContents.on('did-finish-load', () => reportLogins(id));
+  // Popups open in the same pane so the agent never loses track of them.
+  view.webContents.setWindowOpenHandler(({ url }) => { view.webContents.loadURL(url); return { action: 'deny' }; });
+  views[id] = view;
+  reportLogins(id);
+}
+
+function createPanes() { for (const id of PANE_IDS) createPane(id); }
+
+function replacePane(id) {
+  const old = views[id];
+  const url = old ? old.webContents.getURL() : START_URL;
+  if (old) { win.contentView.removeChildView(old); old.webContents.close(); }
+  createPane(id, url && !/^about:/.test(url) ? url : START_URL);
 }
 
 const panes = Object.fromEntries(PANE_IDS.map(id => [id, { id, wc: () => views[id].webContents }]));
@@ -57,8 +88,35 @@ startMcpHttp({
 
 ipcMain.on('layout', (_e, rects) => {
   for (const [id, r] of Object.entries(rects)) {
-    views[id]?.setBounds({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) });
+    bounds[id] = { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+    views[id]?.setBounds(bounds[id]);
   }
+});
+
+/* ---------- browser profiles ---------- */
+
+const profilesPayload = () => ({
+  profiles: [{ id: CLEAN, label: 'Clean (nothing saved)' }, ...profileList(settings)],
+  assigned: Object.fromEntries(PANE_IDS.map(id => [id, profileOf(settings, id)])),
+  logins
+});
+ipcMain.handle('profiles:get', () => profilesPayload());
+ipcMain.handle('profile:set', (_e, { id, profileId }) => {
+  if (!views[id]) return profilesPayload();
+  setProfile(settings, id, profileId); saveSettings();
+  replacePane(id);
+  return profilesPayload();
+});
+ipcMain.handle('profile:add', (_e, label) => { const id = addProfile(settings, label); saveSettings(); return { id, ...profilesPayload() }; });
+// Wipes the pane's cookie jar. On a named profile this signs every pane on that profile out.
+ipcMain.handle('profile:clear', async (_e, id) => {
+  const v = views[id]; if (!v) return profilesPayload();
+  await v.webContents.session.clearStorageData();
+  // Back to the start page rather than a reload: reloading the same site would set its cookies again at once.
+  v.webContents.loadURL(START_URL);
+  await reportLogins(id);
+  for (const other of PANE_IDS) if (other !== id && profileOf(settings, other) === profileOf(settings, id)) reportLogins(other);
+  return profilesPayload();
 });
 
 ipcMain.on('approval:answer', (_e, { approvalId, ok }) => {
@@ -79,7 +137,7 @@ ipcMain.on('task:run', (_e, { ids, task, followUp, previous }) => {
     if (running[id]) continue;
     if (!followUp || !sessions[id]) sessions[id] = newSession();
     send('pane:status', { id, status: 'working' });
-    const turn = { session: sessions[id], followUp: Boolean(followUp && previous?.[id] !== undefined), previous: previous?.[id] || '' };
+    const turn = { session: sessions[id], followUp: Boolean(followUp && previous?.[id] !== undefined), previous: previous?.[id] || '', logins: logins[id] || [] };
     running[id] = runAgent(AGENTS[id], `http://127.0.0.1:${PORT}/mcp/${id}`, task, turn, {
       onOut: (text, stream) => send('pane:out', { id, text, stream }),
       onExit: code => {
@@ -104,12 +162,6 @@ ipcMain.on('task:stop', (_e, { id }) => stop(running[id]));
 
 /* ---------- run history, export, settings ---------- */
 
-const DATA_DIR = path.dirname(CONFIG_PATH);
-const RUNS_DIR = path.join(DATA_DIR, 'runs');
-const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
-const readJson = (p, fallback) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } };
-const settings = readJson(SETTINGS_PATH, {});
-const saveSettings = () => { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2)); };
 
 // The renderer sends the whole run record whenever it changes; the file name is the run's start time.
 ipcMain.on('run:save', (_e, run) => {

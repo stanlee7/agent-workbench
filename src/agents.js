@@ -100,9 +100,10 @@ export function runAgent(agent, url, task, turn, { onOut, onExit }) {
   fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { wb: { type: 'http', url } } }));
 
   const canResume = turn.followUp && agent.followUp;
-  let prompt = `${GUIDE}\n\nTask:\n${task}\n`;
+  const signed = turn.logins && turn.logins.length ? `\nThis pane's browser already has session cookies for: ${turn.logins.join(', ')}. If one of those sites shows you as signed in, use that session; never sign in anywhere yourself.` : '';
+  let prompt = `${GUIDE}${signed}\n\nTask:\n${task}\n`;
   if (turn.followUp && canResume) prompt = `Follow-up question in the same session (your browser pane is still where you left it):\n${task}\n`;
-  else if (turn.followUp && turn.previous) prompt = `${GUIDE}\n\nEarlier in this session:\n${turn.previous}\n\nFollow-up question:\n${task}\n`;
+  else if (turn.followUp && turn.previous) prompt = `${GUIDE}${signed}\n\nEarlier in this session:\n${turn.previous}\n\nFollow-up question:\n${task}\n`;
 
   const parts = tokens(canResume ? agent.followUp : agent.command);
   const promptAsArg = parts.includes('{prompt}');

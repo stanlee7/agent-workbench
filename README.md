@@ -6,7 +6,7 @@
 
 Agent Workbench puts AI agents next to each other: Claude Code, Codex and Antigravity out of the box, plus any other CLI or model you add. Every agent gets its own Chromium pane, exposed to it as a small MCP server. Type one task, send it to all three, and compare what each one found and where it found it.
 
-- **Its own browser per agent.** Each pane has a separate persistent profile, so cookies never mix between agents. Sign in to a site in a pane once, and that agent can work there.
+- **Its own browser per agent, with a cookie jar you choose.** Every pane starts clean: nothing saved, nothing carried over from the last run. Switch a pane to a named profile such as "My logins" when an agent should use a site you signed in to; panes on the same profile share it. The pane shows which sites have set session cookies, and one click wipes them.
 - **You see everything.** Every tool call (`navigate`, `read_page`, `click`, `type` …) shows up live under the pane.
 - **Compare board with an agreement line.** When the agents finish, one click lines up every answer side by side with time, tool calls, pages visited and the URLs each one cited. Numbers, dates and versions are pulled out of the answers and matched across agents, so the board opens with `Agreed by all 4: v24.22.1, 2026-10-21` or `Differs: 94 points (Claude Code, Codex) vs 93 points (Antigravity)`. One button sends the disagreement to an agent of your choice to verify in its browser.
 - **Follow-up questions.** Each pane keeps its CLI session, so "and the previous LTS?" goes back into the same conversation (`claude --resume`, `codex exec resume`, `agy --continue`). Ask all agents at once, or one agent from its column on the board.
@@ -99,6 +99,16 @@ Examples:
 A CLI that only reads MCP servers from its own settings needs the pane registered once, the way Antigravity does above. The pane's id is its name in lower case, and its endpoint is `/mcp/<id>`.
 
 The task bar can sit at the top or the bottom of the window: **Bar at bottom / Bar at top** in the toolbar. The choice is remembered.
+
+## Browser profiles and logins
+
+Under each address bar is the pane's profile:
+
+- **Clean (nothing saved)**, the default. A fresh cookie jar every time the app starts, and again whenever you switch back to it.
+- **My logins**, or any profile you add with **New profile…**. Persistent, and shared by every pane that selects it, so you can sign in to a site once and let two agents work there.
+- **cookies: github.com, …** lists the sites that have set a session cookie in that pane. Most of the time that means you signed in there; some sites set one for visitors too, so read it as "this site will remember the pane". **Clear** wipes the jar (for a shared profile, every pane on it) and returns to the start page.
+
+Agents are told which sites their pane has cookies for, and they never sign in themselves: password fields are refused, and a login wall ends the task with a note to you.
 
 ## Follow-ups, history, export
 

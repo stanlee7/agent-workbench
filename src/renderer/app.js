@@ -88,6 +88,48 @@ function persist() {
   window.wb.saveRun(run);
 }
 
+/* ---------- browser profiles ---------- */
+
+const NEW_PROFILE = '__new';
+
+function renderLogins(id, hosts) {
+  const n = $('.logins', els[id]);
+  n.textContent = hosts.length ? `cookies: ${hosts.join(', ')}` : 'no cookies';
+  n.title = hosts.length ? 'Sites that set a session cookie in this pane, usually after a login. Clear wipes them.' : 'No site has set a session cookie in this pane yet.';
+  n.classList.toggle('on', hosts.length > 0);
+}
+
+function renderProfiles(state) {
+  for (const id of Object.keys(els)) {
+    const sel = $('.profile', els[id]);
+    sel.textContent = '';
+    for (const p of state.profiles) { const o = el('option', null, p.label); o.value = p.id; sel.appendChild(o); }
+    const add = el('option', null, 'New profile…'); add.value = NEW_PROFILE; sel.appendChild(add);
+    sel.value = state.assigned[id] || 'clean';
+    renderLogins(id, state.logins[id] || []);
+  }
+}
+
+function askProfileName(id, sel) {
+  // Inline name box in place of the select; Enter creates the profile and moves this pane onto it.
+  const input = el('input', 'newprof');
+  input.placeholder = 'Profile name, e.g. Work logins';
+  sel.replaceWith(input);
+  input.focus();
+  const restore = async () => { const st = await window.wb.profiles(); input.replaceWith(sel); renderProfiles(st); };
+  input.onkeydown = async e => {
+    if (e.key === 'Escape') return restore();
+    if (e.key !== 'Enter' || e.isComposing) return;
+    const label = input.value.trim();
+    if (!label) return restore();
+    const r = await window.wb.addProfile(label);
+    const st = await window.wb.setProfile(id, r.id);
+    input.replaceWith(sel);
+    renderProfiles(st);
+  };
+  input.onblur = () => { if (document.body.contains(input)) restore(); };
+}
+
 /* ---------- status bar ---------- */
 
 let port = 0;
@@ -489,6 +531,12 @@ async function init() {
     $('.name', node).textContent = p.label;
     $('.stop', node).onclick = () => window.wb.stop(p.id);
     $('.addr', node).onsubmit = e => { e.preventDefault(); window.wb.go(p.id, $('.url', node).value.trim()); };
+    $('.profile', node).onchange = async e => {
+      const sel = e.target;
+      if (sel.value === NEW_PROFILE) return askProfileName(p.id, sel);
+      renderProfiles(await window.wb.setProfile(p.id, sel.value));
+    };
+    $('.clear', node).onclick = async () => { renderProfiles(await window.wb.clearProfile(p.id)); };
     panesEl.appendChild(node);
     els[p.id] = node;
 
@@ -509,6 +557,8 @@ async function init() {
     }
   };
 
+  renderProfiles(await window.wb.profiles());
+  window.wb.on('pane:logins', ({ id, hosts }) => { if (els[id]) renderLogins(id, hosts); });
   window.wb.on('pane:url', ({ id, url }) => {
     $('.url', els[id]).value = url;
     const r = runs[id];

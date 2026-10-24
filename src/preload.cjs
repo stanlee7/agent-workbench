@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('wb', {
   agents: () => ipcRenderer.invoke('agents:get'),
   saveAgents: list => ipcRenderer.send('agents:save', list),
   openAgentsFile: () => ipcRenderer.send('agents:open'),
+  profiles: () => ipcRenderer.invoke('profiles:get'),
+  setProfile: (id, profileId) => ipcRenderer.invoke('profile:set', { id, profileId }),
+  addProfile: label => ipcRenderer.invoke('profile:add', label),
+  clearProfile: id => ipcRenderer.invoke('profile:clear', id),
   go: (id, url) => ipcRenderer.send('pane:go', { id, url }),
   answer: (approvalId, ok) => ipcRenderer.send('approval:answer', { approvalId, ok }),
   on: (ch, fn) => ipcRenderer.on(ch, (_e, payload) => fn(payload))

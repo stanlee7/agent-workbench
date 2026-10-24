@@ -214,3 +214,14 @@ code { color: var(--orange); font-family: var(--mono); }
 /* agents editor: two command lines per agent */
 .cmds { display: flex; flex-direction: column; gap: 4px; }
 .agents input.txt.dim { color: var(--dim); }
+
+/* profile row under the address bar */
+.prof { display: flex; gap: 6px; align-items: center; padding: 0 6px 6px; background: var(--frame); font: 11px var(--ui); color: var(--dim); }
+.prof select, .prof .newprof {
+  font: 11px var(--ui); color: var(--ink); background: var(--field); border: 1px solid var(--line-soft); border-radius: 6px; padding: 2px 6px; max-width: 46%;
+}
+.prof .newprof { flex: 1; max-width: none; outline: 0; }
+.prof .logins { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prof .logins.on { color: var(--orange); }
+.prof .logins.on::before { content: "● "; }
+.prof .clear { padding: 1px 7px; font-size: 11px; background: transparent; color: var(--dim); }
