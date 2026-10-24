@@ -91,6 +91,21 @@ function tokens(command) {
 
 const quote = s => (/[\s"&|<>^]/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s);
 
+// npm installs CLIs on Windows as .cmd shims, which cannot be spawned without a shell. When the
+// prompt travels as an argument we avoid the shell, so run the script the shim points at with node.
+function resolveShim(cmd) {
+  if (process.platform !== 'win32' || /[\\/]/.test(cmd)) return null;
+  for (const dir of (process.env.PATH || '').split(';')) {
+    const shim = path.join(dir, `${cmd}.cmd`);
+    if (!fs.existsSync(shim)) continue;
+    const text = fs.readFileSync(shim, 'utf8');
+    const m = text.match(/"%(?:~)?dp0%?\\([^"]+\.(?:m?js|cjs))"/i) || text.match(/%dp0%\\([^\s"]+\.(?:m?js|cjs))/i);
+    if (m) return { cmd: 'node', pre: [path.join(dir, m[1])] };
+    return null;
+  }
+  return null;
+}
+
 export const newSession = () => randomUUID();
 
 // turn: { session, followUp, previous } — previous is the earlier Q&A, used only when the CLI cannot resume.
@@ -112,7 +127,8 @@ export function runAgent(agent, url, task, turn, { onOut, onExit }) {
 
   // Prompt via stdin: run through the shell so .cmd shims (claude, codex) resolve on Windows.
   // Prompt as an argument: no shell, so the text arrives exactly as written. The command must be a real executable.
-  const child = spawn(parts[0], promptAsArg ? args : args.map(quote), {
+  const shim = promptAsArg ? resolveShim(parts[0]) : null;
+  const child = spawn(shim ? shim.cmd : parts[0], promptAsArg ? [...(shim ? shim.pre : []), ...args] : args.map(quote), {
     cwd: dir,
     shell: !promptAsArg,
     windowsHide: true,

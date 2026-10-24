@@ -106,6 +106,10 @@ Examples:
 
 A CLI that only reads MCP servers from its own settings needs the pane registered once, the way Antigravity does above. The pane's id is its name in lower case, and its endpoint is `/mcp/<id>`.
 
+CLIs installed by npm on Windows (`.cmd` shims) work with `{prompt}` too: the app runs the script behind the shim with `node`, so the prompt arrives intact without a shell.
+
+Not yet verified here: Gemini CLI (on 2026-10-24 the individual Code Assist tier refused the client and pointed to Antigravity), OpenCode, Aider. If you get one working, a pull request with its two command lines is welcome.
+
 The task bar can sit at the top or the bottom of the window: **Bar at bottom / Bar at top** in the toolbar. The choice is remembered.
 
 ## Browser profiles and logins
