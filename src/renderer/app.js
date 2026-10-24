@@ -263,7 +263,11 @@ async function init() {
     $('#who').appendChild(who);
   }
 
-  const refresh = () => { updateCompareButton(); if (overlay === '#board') renderBoard(); };
+  const refresh = () => {
+    updateCompareButton();
+    if (overlay === '#board') renderBoard();
+    else if (cfg.autoCompare && Object.values(runs).every(r => r.status !== 'working')) setTimeout(openBoard, 2000);
+  };
 
   window.wb.on('pane:url', ({ id, url }) => {
     $('.url', els[id]).value = url;

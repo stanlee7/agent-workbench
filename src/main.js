@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { startMcpHttp } from './mcpServer.js';
+import { startRecorder } from './recorder.js';
 import { loadAgents, saveAgents, runAgent, slug, CONFIG_PATH } from './agents.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -101,6 +102,8 @@ const START_TASK = taskArg > 0 ? process.argv[taskArg + 1] || '' : '';
 ipcMain.handle('config', () => ({
   port: PORT,
   startTask: START_TASK,
+  // While recording a demo, open the compare board by itself once every agent has finished.
+  autoCompare: Boolean(process.env.WORKBENCH_RECORD),
   panes: PANE_IDS.map(id => ({ id, label: AGENTS[id].label, color: AGENTS[id].color }))
 }));
 
@@ -135,6 +138,7 @@ app.whenReady().then(() => {
   win.maximize();
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   createPanes();
+  if (process.env.WORKBENCH_RECORD) startRecorder(win, views, process.env.WORKBENCH_RECORD);
 });
 
 app.on('window-all-closed', () => {

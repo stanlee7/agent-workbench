@@ -2,6 +2,8 @@
 
 **One desktop app. Any CLI agents you like. Each one drives its own browser, side by side, and you watch every click.**
 
+![Four agents answer the same question in their own browser panes, then the compare board lines up their answers](docs/demo.gif)
+
 Agent Workbench puts AI agents next to each other: Claude Code, Codex and Antigravity out of the box, plus any other CLI or model you add. Every agent gets its own Chromium pane, exposed to it as a small MCP server. Type one task, send it to all three, and compare what each one found and where it found it.
 
 - **Its own browser per agent.** Each pane has a separate persistent profile, so cookies never mix between agents. Sign in to a site in a pane once, and that agent can work there.
@@ -13,6 +15,8 @@ Agent Workbench puts AI agents next to each other: Claude Code, Codex and Antigr
 - **Local only.** The MCP server listens on `127.0.0.1`. Nothing outside your machine can drive the panes.
 
 > Status: v0.1 prototype. Tested on Windows 11 with Claude Code 2.1, Codex CLI 0.163 and Antigravity CLI 1.4.
+
+![Compare board](docs/compare.png)
 
 ## How it works
 
@@ -63,6 +67,8 @@ npm start -- --task "Find the current Node.js LTS version and its release date o
 
 ## Add your own agent
 
+![Agents screen](docs/agents.png)
+
 Open **Agents** in the toolbar, press **Add agent**, give it a name, a colour and a command, then **Save and restart**. The list lives in `~/.agent-workbench/agents.json` (or the path in `WORKBENCH_AGENTS`), so you can also edit it by hand.
 
 Placeholders in a command:
@@ -83,6 +89,16 @@ Examples:
 A CLI that only reads MCP servers from its own settings needs the pane registered once, the way Antigravity does above. The pane's id is its name in lower case, and its endpoint is `/mcp/<id>`.
 
 The task bar can sit at the top or the bottom of the window: **Bar at bottom / Bar at top** in the toolbar. The choice is remembered.
+
+## Record a demo
+
+The app can record itself, not the screen, so other windows never end up in a demo:
+
+```bash
+WORKBENCH_RECORD=./frames WORKBENCH_RECORD_SECONDS=120 npm start -- --task "What is the #1 story on Hacker News right now?"
+```
+
+Frames land in `./frames` as JPEGs, and the compare board opens by itself when every agent is done. `docs/demo.gif` was made this way.
 
 ## Smoke test
 
