@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Agent Workbench</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">Agent<b>Workbench</b></div>
+    <textarea id="task" rows="2" placeholder="One task for every checked agent. e.g. Find 3 US workforce boards that fund AI training and give me their contact page URLs."></textarea>
+    <div class="who" id="who"></div>
+    <button id="runAll" class="primary">Run ⏎</button>
+  </header>
+  <main id="panes"></main>
+
+  <template id="paneTpl">
+    <section class="pane">
+      <div class="head">
+        <span class="dot"></span>
+        <strong class="name"></strong>
+        <span class="state">idle</span>
+        <button class="stop" title="Stop this agent">Stop</button>
+      </div>
+      <form class="addr"><input class="url" spellcheck="false"><button>Go</button></form>
+      <div class="slot"></div>
+      <div class="approvals"></div>
+      <div class="log"></div>
+    </section>
+  </template>
+  <script src="app.js"></script>
+</body>
+</html>

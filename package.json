@@ -1,0 +1,19 @@
+{
+  "name": "agent-workbench",
+  "version": "0.1.0",
+  "description": "One desktop app, three AI agents (Claude Code, Codex, Antigravity), each driving its own browser pane over MCP. You watch every click and approve the risky ones.",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "keywords": ["mcp", "electron", "ai-agent", "browser-automation", "claude-code", "codex", "antigravity"],
+  "author": "stanlee7",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "electron": "^38.8.6",
+    "zod": "^4.6.7"
+  }
+}
