@@ -16,7 +16,7 @@ Agent Workbench puts AI agents next to each other: Claude Code, Codex and Antigr
 - **Uses the subscriptions you already have.** The app launches the official CLIs (`claude`, `codex`, `agy`), so there are no API keys to paste and no extra billing.
 - **Local only.** The MCP server listens on `127.0.0.1`. Nothing outside your machine can drive the panes.
 
-> Status: v0.2, early. Tested on Windows 11 with Claude Code 2.1, Codex CLI 0.163 and Antigravity CLI 1.4. macOS should work but is untested.
+> Status: v0.2.1, early. Tested on Windows 11 with Claude Code 2.1, Codex CLI 0.163 and Antigravity CLI 1.4. macOS should work but is untested.
 
 ![Compare board](docs/compare.png)
 
@@ -185,7 +185,7 @@ npm run smoke -- claude  # just one
 - [x] Run history and Markdown export
 - [x] Agreement line across answers
 - [x] Any MCP-capable CLI as a pluggable agent (`agents.json`)
-- [ ] Ready-made presets for more CLIs (Gemini CLI, Aider, …)
+- [ ] Ready-made presets for more CLIs (Gemini CLI, Aider, …): waiting on a CLI that can be verified here
 - [x] Windows installer
 - [ ] macOS build
 
