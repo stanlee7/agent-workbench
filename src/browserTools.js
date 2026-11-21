@@ -1,6 +1,10 @@
 // Browser actions an agent can take inside its own pane.
 // Every function receives the pane's webContents; nothing here can reach another pane.
 
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 const RISKY = /(submit|pay|purchase|checkout|order|send|post|publish|delete|remove|sign\s?up|confirm|제출|결제|구매|주문|발송|보내기|전송|게시|올리기|등록|삭제|가입|확인)/i;
 
 // Marks visible interactive elements with data-wb-id and returns a compact outline.
@@ -79,7 +83,7 @@ export async function readPage(wc, offset = 0) {
     text,
     rest > 0 ? `[${rest} more characters: call read_page with offset=${start + PAGE}]` : '[end of page text]',
     p.tables ? `[${p.tables} table(s) on this page: use extract_table]` : '',
-    '--- Interactive elements (use the number with click / type / select) ---',
+    '--- Interactive elements (use the number with click / type / select / upload_file) ---',
     p.elements || '(none)'
   ].filter(Boolean).join('\n');
 }
@@ -118,6 +122,105 @@ export async function type(wc, id, text, submit, approve) {
     await settle(wc);
   }
   return `Typed into [${id}]${submit ? ' and pressed Enter' : ''}. Now at ${wc.getURL()}`;
+}
+
+async function uploadPath(file) {
+  if (typeof file !== 'string' || !path.isAbsolute(file) || file.includes('\0')) {
+    throw new Error('Refused: upload_file needs an absolute local file path.');
+  }
+  const dirs = ['.ssh', '.aws', '.gnupg', '.config'].map(d => path.join(os.homedir(), d));
+  const roots = [...dirs, ...await Promise.all(dirs.map(d => fs.realpath(d).catch(() => d)))];
+  const check = p => {
+    const name = path.basename(p);
+    const sensitive = roots.some(root => {
+      const rel = path.relative(root.toLowerCase(), p.toLowerCase());
+      return !rel || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel));
+    });
+    if (sensitive || /^\.env|\.env(?:$|[._~-])/i.test(name)) {
+      throw new Error('Refused: private home directories and .env files cannot be uploaded.');
+    }
+  };
+  // Check both names so symlinks cannot hide a private directory or an .env file.
+  check(path.resolve(file));
+  const real = await fs.realpath(file);
+  check(real);
+  const info = await fs.stat(real);
+  if (!info.isFile()) throw new Error('Refused: upload_file only accepts regular files.');
+  if (info.size > 200 * 1024 * 1024) throw new Error('Refused: files must be 200 MB or smaller.');
+  return real;
+}
+
+function fileInputJs(id) {
+  return `(() => {
+    const el = document.querySelector('[data-wb-id="${Number(id)}"]');
+    if (!el) return 'No element. Call read_page again.';
+    const sel = 'input[type=file]';
+    let input = el.matches(sel) ? el : null;
+    if (!input) {
+      if (!el.matches('button,[role=button],input[type=button],input[type=submit],label')) return 'This element is not a file input or an upload button.';
+      const label = el.closest('label');
+      const linked = (label && label.control) || document.getElementById(el.getAttribute('aria-controls'));
+      if (linked && linked.matches(sel)) input = linked;
+      // Find the nearest input by DOM distance, including inputs hidden behind a button.
+      const ancestors = new Map();
+      for (let n = el, d = 0; n; n = n.parentElement, d++) ancestors.set(n, d);
+      let nearest = Infinity;
+      if (!input) for (const candidate of document.querySelectorAll(sel)) {
+        let n = candidate, d = 0;
+        while (n && !ancestors.has(n)) { n = n.parentElement; d++; }
+        if (n && d + ancestors.get(n) < nearest) {
+          nearest = d + ancestors.get(n);
+          input = candidate;
+        }
+      }
+    }
+    if (!input) return 'No file input near this button. Call read_page again.';
+    if (input.matches(':disabled') || input.webkitdirectory) return 'Disabled inputs and directory uploads are refused.';
+    return input;
+  })()`;
+}
+
+const uploading = new WeakSet();
+
+export async function uploadFile(wc, id, filePath, approve) {
+  if (uploading.has(wc)) return 'An upload is already waiting or running in this pane.';
+  uploading.add(wc);
+  const debug = wc.debugger;
+  let attached = false, objectId;
+  try {
+    const file = await uploadPath(filePath);
+    const url = wc.getURL();
+    if (!debug.isAttached()) { debug.attach('1.3'); attached = true; }
+    const target = await debug.sendCommand('Runtime.evaluate', { expression: fileInputJs(id) });
+    if (target.exceptionDetails) throw new Error('Could not find the file input. Call read_page again.');
+    objectId = target.result.objectId;
+    if (!objectId) return `[${id}] ${target.result.value}`;
+    // Selecting a file can send it immediately, so every upload needs an approval card.
+    const ok = await approve(`Upload "${file}" to [${id}] at ${url}`);
+    if (!ok) return 'The user declined uploading the file. Do not retry; report back instead.';
+    if (await uploadPath(filePath) !== file || wc.getURL() !== url) {
+      return 'The file or page changed while waiting for approval. Call read_page again.';
+    }
+    const ready = await debug.sendCommand('Runtime.callFunctionOn', {
+      objectId, returnByValue: true,
+      functionDeclaration: `function() {
+        if (!this.isConnected || this.ownerDocument !== document || !this.matches('input[type=file]') || this.matches(':disabled') || this.webkitdirectory) return false;
+        // Clearing without events makes even a repeated selection fire input and change once.
+        this.value = '';
+        return true;
+      }`
+    });
+    if (ready.exceptionDetails || !ready.result.value) return 'The file input changed. Call read_page again.';
+    // Chromium dispatches input and change here; no click or file chooser is needed.
+    await debug.sendCommand('DOM.setFileInputFiles', { objectId, files: [file] });
+    await settle(wc);
+    return `Uploaded "${path.basename(file)}" into [${id}]. Now at ${wc.getURL()}`;
+  } finally {
+    try {
+      if (objectId && debug.isAttached()) await debug.sendCommand('Runtime.releaseObject', { objectId }).catch(() => {});
+      if (attached && debug.isAttached()) debug.detach();
+    } finally { uploading.delete(wc); }
+  }
 }
 
 export async function select(wc, id, value) {

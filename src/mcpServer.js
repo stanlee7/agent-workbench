@@ -67,6 +67,11 @@ function buildServer(pane, hooks) {
     inputSchema: { id: z.number().int(), text: z.string(), submit: z.boolean().optional() }
   }, (a) => run('type', a, async () => text(await B.type(pane.wc(), a.id, a.text, !!a.submit, approve)))());
 
+  server.registerTool('upload_file', {
+    description: 'Put a local file into a file input or the nearest file input to an upload button, using its number from read_page. No file chooser opens. Always waits for human approval. Requires an absolute path to an existing regular file, at most 200 MB; private home directories (.ssh, .aws, .gnupg, .config) and .env files are refused.',
+    inputSchema: { id: z.number().int(), path: z.string().describe('Absolute path to the local file to upload') }
+  }, (a) => run('upload_file', a, async () => text(await B.uploadFile(pane.wc(), a.id, a.path, approve)))());
+
   server.registerTool('scroll', {
     description: 'Scroll the page up or down.',
     inputSchema: { direction: z.enum(['up', 'down']) }

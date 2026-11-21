@@ -39,6 +39,7 @@ Tools each agent gets:
 | `read_page(offset?)` | URL, title, visible text (6,000 characters a call; `offset` reads on), and numbered interactive elements |
 | `click(id)` | Real mouse click on element `id` (risky buttons ask you first) |
 | `type(id, text, submit?)` | Type into an input, optionally press Enter (passwords refused) |
+| `upload_file(id, path)` | Upload a local file to a file input or nearby upload button without a file chooser (asks you first; absolute path, regular file ≤200 MB; private home directories and .env files refused) |
 | `select(id, value)` | Pick an option in a dropdown |
 | `press(key)` | Enter, Escape, Tab, arrows, Page Up/Down (Enter inside a form asks you first) |
 | `wait(text?, seconds?)` | Wait for text to appear on slow pages |
