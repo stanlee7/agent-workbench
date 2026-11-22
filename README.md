@@ -18,7 +18,7 @@ Agent Workbench puts AI agents next to each other: Claude Code, Codex and Antigr
 - **Uses the subscriptions you already have.** The app launches the official CLIs (`claude`, `codex`, `agy`), so there are no API keys to paste and no extra billing.
 - **Local only.** The MCP server listens on `127.0.0.1`. Nothing outside your machine can drive the panes.
 
-> Status: v0.3.0, early. Previously tested on Windows 11 with Claude Code 2.1, Codex CLI 0.163 and Antigravity CLI 1.4. Tested on this Mac (macOS 26.6.2, arm64): Node smoke checks and unsigned app packaging pass. GUI/IPC smoke and DMG creation remain unverified: Electron exits with `SIGABRT` and `hdiutil` cannot create a disk image in this execution environment. See [the v0.3 report](docs/v0.3_report.md).
+> Status: v0.3.0, early. v0.2 was tested on Windows 11 with Claude Code 2.1, Codex CLI 0.163 and Antigravity CLI 1.4. v0.3 passes its automated checks on macOS 26 (arm64): setup checks, MCP tools, and the sign-in hand-off through the real UI and IPC. A full run against a real signed-in site has not been tested yet, and v0.3 has not been tested on Windows.
 
 ![Compare board](docs/compare.png)
 
