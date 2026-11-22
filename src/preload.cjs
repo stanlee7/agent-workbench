@@ -15,11 +15,18 @@ contextBridge.exposeInMainWorld('wb', {
   agents: () => ipcRenderer.invoke('agents:get'),
   saveAgents: list => ipcRenderer.send('agents:save', list),
   openAgentsFile: () => ipcRenderer.send('agents:open'),
+  setLanguage: language => ipcRenderer.invoke('settings:language', language),
+  checkSetup: () => ipcRenderer.invoke('setup:check'),
+  setupSeen: () => ipcRenderer.invoke('setup:seen'),
+  registerAgy: id => ipcRenderer.invoke('setup:register-agy', id),
+  setupDocs: () => ipcRenderer.send('setup:docs'),
   profiles: () => ipcRenderer.invoke('profiles:get'),
   setProfile: (id, profileId) => ipcRenderer.invoke('profile:set', { id, profileId }),
   addProfile: label => ipcRenderer.invoke('profile:add', label),
   clearProfile: id => ipcRenderer.invoke('profile:clear', id),
   go: (id, url) => ipcRenderer.send('pane:go', { id, url }),
+  signInAnswer: (id, requestId, result) => ipcRenderer.invoke('signin:answer', { id, requestId, result }),
+  keepSignIn: (id, requestId) => ipcRenderer.invoke('signin:keep', { id, requestId }),
   answer: (approvalId, ok) => ipcRenderer.send('approval:answer', { approvalId, ok }),
   on: (ch, fn) => ipcRenderer.on(ch, (_e, payload) => fn(payload))
 });

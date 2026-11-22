@@ -244,3 +244,30 @@ code { color: var(--orange); font-family: var(--mono); }
 .pane.browser-only .slot { flex: 1; }
 .pane.log-only .slot { display: none; }
 .pane.log-only .log { flex: 1; }
+
+/* Reserve space above the native browser so the hand-off stays clickable. */
+.signin { flex: none; padding: 10px; background: #29364b; border: 1px solid #8cbcff; display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow: auto; overflow-wrap: anywhere; font-family: var(--ui); }
+.signin .btns { display: flex; gap: 6px; }
+.signin label { display: flex; gap: 5px; align-items: flex-start; }
+.pane[data-status=signin] .head { box-shadow: inset 0 -2px 0 #8cbcff; }
+.pane[data-status=signin] .state, #status .signin { color: #8cbcff; }
+#status .signin { border: 0; padding: 0; background: transparent; display: inline; }
+
+#setupView { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 22px; background: var(--bg); }
+.setup th:first-child { width: 16%; }
+.setup th:nth-child(2) { width: 12%; }
+.setup th:nth-child(3) { width: 24%; }
+.setup code { overflow-wrap: anywhere; }
+#who input:disabled + span { color: var(--faint); }
+.bar { flex-wrap: wrap; }
+.prompt-box { min-width: 220px; }
+
+.starters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 8px; border-bottom: 1px solid var(--line-soft); }
+.starters button { background: transparent; color: var(--dim); border-radius: 14px; font-size: 11px; }
+.starters button:hover { color: var(--ink); border-color: var(--orange); }
+body.dock-bottom .starters { order: 2; }
+.language select { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--field); color: var(--ink); }
+
+.pane[data-status=signin] .log { display: none; }
+.pane[data-status=signin] .slot { min-height: 60px; }
+#panes.focus .pane:not(.focused) .signin { max-height: 140px; }

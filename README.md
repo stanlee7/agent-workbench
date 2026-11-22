@@ -7,6 +7,8 @@
 Agent Workbench puts AI agents next to each other: Claude Code, Codex and Antigravity out of the box, plus any other CLI or model you add. Every agent gets its own Chromium pane, exposed to it as a small MCP server. Type one task, send it to all three, and compare what each one found and where it found it.
 
 - **Its own browser per agent, with a cookie jar you choose.** Every pane starts clean: nothing saved, nothing carried over from the last run. Switch a pane to a named profile such as "My logins" when an agent should use a site you signed in to; panes on the same profile share it. The pane shows which sites have set session cookies, and one click wipes them.
+- **A login wall hands control to you.** Sign in by hand, including 2FA, then press **Done, continue**. A clean pane offers an unchecked **Keep this sign-in** option that switches it to **My logins** before you sign in.
+- **First-run setup and Korean UI.** Setup checks your CLI installations, skips unavailable agents, and offers Korean or English. Four example tasks help you get started.
 - **You see everything.** Every tool call (`navigate`, `read_page`, `click`, `type` …) shows up live under the pane.
 - **Compare board with an agreement line.** When the agents finish, one click lines up every answer side by side with time, tool calls, pages visited and the URLs each one cited. Numbers, dates and versions are pulled out of the answers and matched across agents, so the board opens with `Agreed by all 4: v24.22.1, 2026-10-21` or `Differs: 94 points (Claude Code, Codex) vs 93 points (Antigravity)`. One button sends the disagreement to an agent of your choice to verify in its browser.
 - **Follow-up questions.** Each pane keeps its CLI session, so "and the previous LTS?" goes back into the same conversation (`claude --resume`, `codex exec resume`, `agy --continue`). Ask all agents at once, or one agent from its column on the board.
@@ -16,7 +18,7 @@ Agent Workbench puts AI agents next to each other: Claude Code, Codex and Antigr
 - **Uses the subscriptions you already have.** The app launches the official CLIs (`claude`, `codex`, `agy`), so there are no API keys to paste and no extra billing.
 - **Local only.** The MCP server listens on `127.0.0.1`. Nothing outside your machine can drive the panes.
 
-> Status: v0.2.1, early. Tested on Windows 11 with Claude Code 2.1, Codex CLI 0.163 and Antigravity CLI 1.4. macOS should work but is untested.
+> Status: v0.3.0, early. Previously tested on Windows 11 with Claude Code 2.1, Codex CLI 0.163 and Antigravity CLI 1.4. Tested on this Mac (macOS 26.6.2, arm64): Node smoke checks and unsigned app packaging pass. GUI/IPC smoke and DMG creation remain unverified: Electron exits with `SIGABRT` and `hdiutil` cannot create a disk image in this execution environment. See [the v0.3 report](docs/v0.3_report.md).
 
 ![Compare board](docs/compare.png)
 
@@ -35,6 +37,7 @@ Tools each agent gets:
 
 | Tool | What it does |
 |---|---|
+| `ask_user_to_sign_in(reason)` | Pause for manual sign-in in the pane; **Done, continue** returns `signed in`, **Skip** returns `skipped`, and ten minutes returns `timed out`. Browser tools pause while you sign in. |
 | `navigate(url)` | Open a URL |
 | `read_page(offset?)` | URL, title, visible text (6,000 characters a call; `offset` reads on), and numbered interactive elements |
 | `click(id)` | Real mouse click on element `id` (risky buttons ask you first) |
@@ -52,9 +55,27 @@ Tools each agent gets:
 
 **Windows:** download `Agent Workbench-<version>-win-x64.exe` from [Releases](https://github.com/stanlee7/agent-workbench/releases) and run it. The installer is not code-signed, so SmartScreen shows "Windows protected your PC": click **More info**, then **Run anyway**. It installs per user, no admin needed.
 
-**macOS:** no build yet. Run from source below (it should work; it has not been tested).
+**macOS (Apple silicon):** open the unsigned `Agent Workbench-<version>-mac-arm64.dmg`, then drag **Agent Workbench** into **Applications**. In Finder, right-click the app and choose **Open**, then confirm **Open**. If macOS still blocks the app, use **System Settings → Privacy & Security → Open Anyway** after trying to open it.
+
+For a build you trust, you can instead remove the downloaded app's quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Agent Workbench.app"
+```
+
+The build is unsigned and not notarized. No installer is published as part of this change.
 
 Either way you still need the CLIs you want to use, installed and signed in (`claude`, `codex`, `agy`). The app only launches them.
+
+## First run
+
+1. Open **Setup** (shown automatically the first time). Each enabled agent is checked on PATH with a five-second `--version` timeout. Missing or unresponsive CLIs are excluded from the run; install what you need, then **Check again**.
+2. Install Claude Code with `npm i -g @anthropic-ai/claude-code`, or Codex with `npm i -g @openai/codex`. For Antigravity, use its [official docs](https://antigravity.google/docs/getting-started?tab=cli); the app labels its install command **unverified**.
+3. Run `claude`, `codex`, or `agy` once in your terminal to sign in. Workbench does not perform CLI login. If `agy mcp list` is available and `wb` is missing, **Register wb** runs the displayed command only after you click it. Unsupported MCP checks are skipped.
+4. Choose **한국어** or **English** in Setup. The default follows the system locale. Select the agents you want, click an example chip or enter a task, and press **Run**.
+5. When a website needs a login, sign in in that agent's browser pane, then press **Done, continue**. **Skip** lets the agent report the limitation. Choose **Keep this sign-in** before entering credentials if you want the pane to remember it.
+
+For launches from Finder, Workbench also adds common macOS CLI locations (`~/.local/bin`, `~/.npm-global/bin`, `/opt/homebrew/bin`, `/usr/local/bin`) to its PATH. For other version-manager paths, start from a terminal that can find your CLI.
 
 ## Run from source
 
@@ -121,7 +142,9 @@ Under each address bar is the pane's profile:
 - **My logins**, or any profile you add with **New profile…**. Persistent, and shared by every pane that selects it, so you can sign in to a site once and let two agents work there.
 - **cookies: github.com, …** lists the sites that have set a session cookie in that pane. Most of the time that means you signed in there; some sites set one for visitors too, so read it as "this site will remember the pane". **Clear** wipes the jar (for a shared profile, every pane on it) and returns to the start page.
 
-Agents are told which sites their pane has cookies for, and they never sign in themselves: password fields are refused, and a login wall ends the task with a note to you.
+Agents are told which sites their pane has cookies for. When a login is required, `ask_user_to_sign_in(reason)` shows a banner above that pane's interactive browser. The pane header and status bar show that it is waiting for you. Enter your password and 2FA yourself, then press **Done, continue**; the agent reads the page again and continues. **Skip** or the ten-minute timeout lets it report the limitation.
+
+On a clean pane, **Keep this sign-in (switch pane to My logins)** starts unchecked. Checking it recreates the pane on the persistent **My logins** profile at the current URL before you sign in. It does not copy cookies from the clean profile. Password fields remain refused, and agents are still told never to type passwords or payment details. Stopping an agent or closing Workbench cancels its pending hand-off.
 
 ## Layouts and keys
 
@@ -143,7 +166,7 @@ Agents are told which sites their pane has cookies for, and they never sign in t
 - After a run, tick **Follow-up in the same session** and ask again; every checked agent continues its own session. The compare board's **Ask this agent** row sends a follow-up to one agent only.
 - **History** lists past runs (saved as JSON in `~/.agent-workbench/runs/`). Open one to see its board, or **Run again** to put the task back in the prompt.
 - **Export .md** saves the board, with the agreement line and every turn, as a Markdown file. The folder you pick is remembered.
-- A desktop notification tells you when an agent is waiting for approval or every agent has finished while the window is in the background.
+- A desktop notification tells you when an agent is waiting for sign-in or approval or every agent has finished while the window is in the background.
 
 ## Record a demo
 
@@ -161,16 +184,25 @@ Output lands in `dist/`:
 
 ```bash
 npm run dist:win   # Windows NSIS installer
-npm run dist:mac   # macOS dmg, on a Mac
+npm run dist:mac   # unsigned arm64 dmg, on an Apple silicon Mac
 ```
+
+The macOS build packages with electron-builder, reuses the locally installed Electron runtime, wraps the existing 512px icon as ICNS, and creates the DMG with macOS `hdiutil`. It needs an Apple silicon Mac with normal desktop and disk-image access. It never publishes. An Intel build is not included.
 
 ## Smoke test
 
-With the app running:
+```bash
+npm run smoke       # Node + in-memory MCP checks; no CLI account, network or desktop needed
+npm run smoke:ipc   # actual Electron banner / preload IPC checks; desktop required
+```
+
+The IPC smoke test starts its own isolated Electron renderer and loopback MCP server. It calls `ask_user_to_sign_in` and clicks the real banner buttons through the preload IPC path, checking continue, skip, persistence choice, timeout, and safety refusals.
+
+For an optional live CLI task, start Workbench first:
 
 ```bash
-npm run smoke            # every enabled agent
-npm run smoke -- claude  # just one
+npm run smoke:agents            # every enabled agent; requires signed-in CLIs
+npm run smoke:agents -- claude  # just one
 ```
 
 ## Safety notes
@@ -188,11 +220,11 @@ npm run smoke -- claude  # just one
 - [x] Any MCP-capable CLI as a pluggable agent (`agents.json`)
 - [ ] Ready-made presets for more CLIs (Gemini CLI, Aider, …): waiting on a CLI that can be verified here
 - [x] Windows installer
-- [ ] macOS build
+- [ ] macOS DMG validation (unsigned app packages; DMG creation blocked in this environment)
 
 ## 한국어 요약
 
-AI 에이전트(기본 Claude Code, Codex, Antigravity, 그리고 직접 추가한 CLI나 모델)를 한 화면에 띄우고, 에이전트마다 자기 전용 브라우저 칸을 MCP로 연결한 데스크톱 앱입니다. 질문 하나를 여러 에이전트에게 동시에 주고, 끝나면 비교판(Compare)에서 답, 걸린 시간, 도구 호출 수, 인용한 출처를 나란히 봅니다. 답에서 숫자, 날짜, 버전을 뽑아 몇 에이전트가 일치하는지 「합의 줄」로 보여 주고, 어긋나는 값은 한 에이전트에게 다시 확인시킬 수 있습니다. 후속 질문은 같은 세션으로 이어지고, 실행 기록은 PC에 저장되며, 비교판은 마크다운 파일로 내보냅니다. 클릭 하나하나가 화면에 보이고, 제출, 결제, 발송, 게시, 삭제 같은 버튼은 사람이 승인해야 눌립니다. 각자 쓰는 구독(CLI 로그인)을 그대로 쓰므로 API 키가 필요 없습니다.
+AI 에이전트(기본 Claude Code, Codex, Antigravity, 그리고 직접 추가한 CLI나 모델)를 한 화면에 띄우고, 에이전트마다 자기 전용 브라우저 칸을 MCP로 연결한 데스크톱 앱입니다. 질문 하나를 여러 에이전트에게 동시에 주고, 끝나면 비교판(Compare)에서 답, 걸린 시간, 도구 호출 수, 인용한 출처를 나란히 봅니다. 답에서 숫자, 날짜, 버전을 뽑아 몇 에이전트가 일치하는지 일치 여부로 보여 주고, 어긋나는 값은 한 에이전트에게 다시 확인시킬 수 있습니다. 후속 질문은 같은 세션으로 이어지고, 실행 기록은 PC에 저장되며, 비교판은 마크다운 파일로 내보냅니다. 클릭 하나하나가 화면에 보이고, 제출, 결제, 발송, 게시, 삭제 같은 버튼은 사람이 승인해야 눌립니다. 각자 쓰는 구독(CLI 로그인)을 그대로 쓰므로 API 키가 필요 없습니다.
 
 ## License
 

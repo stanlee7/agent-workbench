@@ -11,33 +11,40 @@
     <div class="brand">Agent<b>Workbench</b></div>
     <div class="prompt-box">
       <span class="caret">›</span>
-      <textarea id="task" rows="2" placeholder="One task for every checked agent. Enter to run, Shift+Enter for a new line"></textarea>
-      <label class="mode" id="modeWrap" hidden><input type="checkbox" id="followUp"> Follow-up in the same session</label>
+      <textarea id="task" rows="2" placeholder="One task for every checked agent. Enter to run, Shift+Enter for a new line" data-i18n-placeholder="One task for every checked agent. Enter to run, Shift+Enter for a new line"></textarea>
+      <label class="mode" id="modeWrap" hidden><input type="checkbox" id="followUp"><span data-i18n="Follow-up in the same session"> Follow-up in the same session</span></label>
     </div>
     <div class="who" id="who"></div>
-    <button id="runAll" class="primary" title="Enter">Run</button>
-    <button id="compare" disabled>Compare <span class="badge" hidden></span></button>
-    <button id="openHistory">History</button>
-    <button id="openAgents">Agents</button>
-    <select id="layout" title="Pane layout (Ctrl+0 columns, Ctrl+1…9 focus a pane)">
-      <option value="columns">Columns</option>
-      <option value="grid">Grid</option>
-      <option value="focus">Focus</option>
+    <button id="runAll" class="primary" title="Enter"><span data-i18n="Run">Run</span></button>
+    <button id="compare" disabled><span data-i18n="Compare">Compare </span><span class="badge" hidden></span></button>
+    <button id="openHistory"><span data-i18n="History">History</span></button>
+    <button id="openAgents"><span data-i18n="Agents">Agents</span></button>
+    <button id="openSetup"><span data-i18n="Setup">Setup</span></button>
+    <select id="layout" title="Pane layout (Ctrl+0 columns, Ctrl+1…9 focus a pane)" data-i18n-title="Pane layout (Ctrl+0 columns, Ctrl+1…9 focus a pane)">
+      <option value="columns" data-i18n="Columns">Columns</option>
+      <option value="grid" data-i18n="Grid">Grid</option>
+      <option value="focus" data-i18n="Focus">Focus</option>
     </select>
-    <button id="dock" title="Move the task bar to the other edge">Bar at bottom</button>
+    <button id="dock" title="Move the task bar to the other edge" data-i18n-title="Move the task bar to the other edge"><span data-i18n="Bar at bottom">Bar at bottom</span></button>
   </header>
+  <nav id="starters" class="starters">
+    <button data-i18n="Compare prices of a product across shops">Compare prices of a product across shops</button>
+    <button data-i18n="Find the latest version and release date of a software">Find the latest version and release date of a software</button>
+    <button data-i18n="Check a claim and list sources">Check a claim and list sources</button>
+    <button data-i18n="Summarize a page I am signed in to">Summarize a page I am signed in to</button>
+  </nav>
   <main id="panes"></main>
 
   <section id="board" hidden>
     <div class="board-head">
       <div>
-        <div class="kicker" id="boardKicker">Compare</div>
+        <div class="kicker" id="boardKicker"><span data-i18n="Compare">Compare</span></div>
         <h2 id="boardTask"></h2>
       </div>
       <div class="board-actions">
-        <button id="exportMd">Export .md</button>
-        <button id="copyMd">Copy as Markdown</button>
-        <button id="closeBoard" class="primary">Back to panes</button>
+        <button id="exportMd"><span data-i18n="Export .md">Export .md</span></button>
+        <button id="copyMd"><span data-i18n="Copy as Markdown">Copy as Markdown</span></button>
+        <button id="closeBoard" class="primary"><span data-i18n="Back to panes">Back to panes</span></button>
       </div>
     </div>
     <div id="consensus"></div>
@@ -49,51 +56,63 @@
   <section id="historyView" hidden>
     <div class="board-head">
       <div>
-        <div class="kicker">History</div>
-        <h2>Past runs on this machine</h2>
+        <div class="kicker"><span data-i18n="History">History</span></div>
+        <h2><span data-i18n="Past runs on this machine">Past runs on this machine</span></h2>
       </div>
       <div class="board-actions">
-        <button id="openRunsFolder">Open folder</button>
-        <button id="closeHistory" class="primary">Back to panes</button>
+        <button id="openRunsFolder"><span data-i18n="Open folder">Open folder</span></button>
+        <button id="closeHistory" class="primary"><span data-i18n="Back to panes">Back to panes</span></button>
       </div>
     </div>
     <table class="cmp history">
-      <thead><tr><th class="c-when">When</th><th>Task</th><th class="c-agents">Agents</th><th class="c-turns">Turns</th><th class="c-act"></th></tr></thead>
+      <thead><tr><th class="c-when"><span data-i18n="When">When</span></th><th><span data-i18n="Task">Task</span></th><th class="c-agents"><span data-i18n="Agents">Agents</span></th><th class="c-turns"><span data-i18n="Turns">Turns</span></th><th class="c-act"></th></tr></thead>
       <tbody id="historyRows"></tbody>
     </table>
-    <p class="muted" id="historyEmpty" hidden>No runs yet. Every finished run is saved here automatically.</p>
+    <p class="muted" id="historyEmpty" hidden><span data-i18n="No runs yet. Every finished run is saved here automatically.">No runs yet. Every finished run is saved here automatically.</span></p>
   </section>
 
   <section id="agentsView" hidden>
     <div class="board-head">
       <div>
-        <div class="kicker">Agents</div>
-        <h2>Any CLI that speaks MCP can drive a pane</h2>
+        <div class="kicker"><span data-i18n="Agents">Agents</span></div>
+        <h2><span data-i18n="Any CLI that speaks MCP can drive a pane">Any CLI that speaks MCP can drive a pane</span></h2>
       </div>
       <div class="board-actions">
-        <button id="openFile">Open agents.json</button>
-        <button id="cancelAgents">Cancel</button>
-        <button id="saveAgents" class="primary">Save and restart</button>
+        <button id="openFile"><span data-i18n="Open agents.json">Open agents.json</span></button>
+        <button id="cancelAgents"><span data-i18n="Cancel">Cancel</span></button>
+        <button id="saveAgents" class="primary"><span data-i18n="Save and restart">Save and restart</span></button>
       </div>
     </div>
     <table class="cmp agents">
-      <thead><tr><th class="c-on">On</th><th class="c-color">Colour</th><th class="c-name">Name</th><th>Command (first question) / Follow-up command</th><th class="c-del"></th></tr></thead>
+      <thead><tr><th class="c-on"><span data-i18n="On">On</span></th><th class="c-color"><span data-i18n="Colour">Colour</span></th><th class="c-name"><span data-i18n="Name">Name</span></th><th><span data-i18n="Command (first question) / Follow-up command">Command (first question) / Follow-up command</span></th><th class="c-del"></th></tr></thead>
       <tbody id="agentRows"></tbody>
     </table>
-    <p><button id="addAgent">Add agent</button></p>
+    <p><button id="addAgent"><span data-i18n="Add agent">Add agent</span></button></p>
     <div class="help">
-      <p>Placeholders in a command:</p>
+      <p><span data-i18n="Placeholders in a command:">Placeholders in a command:</span></p>
       <table class="cmp ph">
-        <tr><th><code>{url}</code></th><td>this pane's MCP endpoint, for CLIs that take a server URL on the command line</td></tr>
-        <tr><th><code>{mcpConfig}</code></th><td>path to a generated <code>mcp.json</code> (<code>{"mcpServers":{"wb":{"type":"http","url":…}}}</code>)</td></tr>
-        <tr><th><code>{prompt}</code></th><td>the task as one argument. Leave it out and the task goes in through stdin.</td></tr>
-        <tr><th><code>{session}</code></th><td>a UUID made for each new task. Put it in both commands so the follow-up resumes the same session (<code>claude --session-id</code> / <code>--resume</code>).</td></tr>
+        <tr><th><code>{url}</code></th><td><span data-i18n="this pane&#x27;s MCP endpoint, for CLIs that take a server URL on the command line">this pane's MCP endpoint, for CLIs that take a server URL on the command line</span></td></tr>
+        <tr><th><code>{mcpConfig}</code></th><td><span data-i18n="path to a generated">path to a generated </span><code>mcp.json</code> (<code>{"mcpServers":{"wb":{"type":"http","url":…}}}</code>)</td></tr>
+        <tr><th><code>{prompt}</code></th><td><span data-i18n="the task as one argument. Leave it out and the task goes in through stdin.">the task as one argument. Leave it out and the task goes in through stdin.</span></td></tr>
+        <tr><th><code>{session}</code></th><td><span data-i18n="a UUID made for each new task. Put it in both commands so the follow-up resumes the same session (">a UUID made for each new task. Put it in both commands so the follow-up resumes the same session (</span><code>claude --session-id</code> / <code>--resume</code>).</td></tr>
       </table>
-      <p>The follow-up command is optional. Without one, the earlier answer is pasted into the next prompt instead of resuming.
+      <p><span data-i18n="The follow-up command is optional. Without one, the earlier answer is pasted into the next prompt instead of resuming. CLIs that only read MCP servers from their own settings need the pane registered once, as Antigravity does:">The follow-up command is optional. Without one, the earlier answer is pasted into the next prompt instead of resuming.
         CLIs that only read MCP servers from their own settings need the pane registered once, as Antigravity does:
-        <code>agy mcp add wb http://127.0.0.1:7788/mcp/agy</code>. The pane URL is always <code>/mcp/&lt;id&gt;</code>, where the id is the name in lower case.</p>
+        </span><code>agy mcp add wb http://127.0.0.1:7788/mcp/agy</code><span data-i18n=". The pane URL is always">. The pane URL is always </span><code>/mcp/&lt;id&gt;</code><span data-i18n=", where the id is the name in lower case.">, where the id is the name in lower case.</span></p>
       <p class="muted" id="agentsPath"></p>
     </div>
+  </section>
+
+  <section id="setupView" hidden>
+    <div class="board-head">
+      <div><div class="kicker"><span data-i18n="Setup">Setup</span></div><h2><span data-i18n="Check your agents before the first task">Check your agents before the first task</span></h2></div>
+      <div class="board-actions"><button id="checkSetup"><span data-i18n="Check again">Check again</span></button><button id="closeSetup" class="primary"><span data-i18n="Back to panes">Back to panes</span></button></div>
+    </div>
+    <label class="language"><span data-i18n="Language">Language</span> <select id="language"><option value="ko">한국어</option><option value="en" data-i18n="English">English</option></select></label>
+    <p id="setupProgress" role="status"></p>
+    <table class="cmp setup"><thead><tr><th><span data-i18n="Agent">Agent</span></th><th><span data-i18n="CLI">CLI</span></th><th><span data-i18n="Version">Version</span></th><th><span data-i18n="Install / MCP">Install / MCP</span></th></tr></thead><tbody id="setupRows"></tbody></table>
+    <p><span data-i18n="In a terminal, run">In a terminal, run </span><code>claude</code>, <code>codex</code><span data-i18n="or"> or </span><code>agy</code><span data-i18n="once to sign in. Then return here. Workbench does not sign the CLIs in for you."> once to sign in. Then return here. Workbench does not sign the CLIs in for you.</span></p>
+    <p class="muted"><span data-i18n="Missing agents are disabled for this run. After installing a CLI, restart Workbench if it is still missing from PATH.">Missing agents are disabled for this run. After installing a CLI, restart Workbench if it is still missing from PATH.</span></p>
   </section>
 
   <footer id="status"></footer>
@@ -103,21 +122,22 @@
       <div class="head">
         <span class="dot"></span>
         <strong class="name"></strong>
-        <span class="state">idle</span>
-        <button class="fold" title="Show browser and log, browser only, or log only">both</button>
-        <button class="stop" title="Stop this agent">Stop</button>
+        <span class="state"><span data-i18n="idle">idle</span></span>
+        <button class="fold" title="Show browser and log, browser only, or log only" data-i18n-title="Show browser and log, browser only, or log only"><span data-i18n="both">both</span></button>
+        <button class="stop" title="Stop this agent" data-i18n-title="Stop this agent"><span data-i18n="Stop">Stop</span></button>
       </div>
-      <form class="addr"><input class="url" spellcheck="false"><button>Go</button></form>
+      <form class="addr"><input class="url" spellcheck="false"><button><span data-i18n="Go">Go</span></button></form>
       <div class="prof">
-        <select class="profile" title="Cookie jar for this pane"></select>
-        <span class="logins">no cookies</span>
-        <button class="clear" title="Wipe cookies and site data for this pane">Clear</button>
+        <select class="profile" title="Cookie jar for this pane" data-i18n-title="Cookie jar for this pane"></select>
+        <span class="logins"><span data-i18n="no cookies">no cookies</span></span>
+        <button class="clear" title="Wipe cookies and site data for this pane" data-i18n-title="Wipe cookies and site data for this pane"><span data-i18n="Clear">Clear</span></button>
       </div>
+      <div class="signin" hidden role="status" aria-live="polite"></div>
       <div class="slot"></div>
       <div class="approvals"></div>
       <div class="log"></div>
     </section>
   </template>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

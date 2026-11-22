@@ -5,6 +5,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+export const askUserToSignIn = (reason, ask) => ask(reason);
+
 const RISKY = /(submit|pay|purchase|checkout|order|send|post|publish|delete|remove|sign\s?up|confirm|제출|결제|구매|주문|발송|보내기|전송|게시|올리기|등록|삭제|가입|확인)/i;
 
 // Marks visible interactive elements with data-wb-id and returns a compact outline.
@@ -22,7 +24,7 @@ const OUTLINE_JS = `(() => {
     el.setAttribute('data-wb-id', String(i));
     const tag = el.tagName.toLowerCase();
     const type = el.getAttribute('type') || '';
-    const label = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
+    const label = (el.innerText || (el.type === 'password' ? '' : el.value) || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
     const href = tag === 'a' ? (el.getAttribute('href') || '').slice(0, 100) : '';
     out.push('[' + i + '] ' + tag + (type ? ':' + type : '') + ' "' + label + '"' + (href ? ' -> ' + href : ''));
     i++;
@@ -40,7 +42,7 @@ function elementInfoJs(id) {
     return {
       x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
       tag: el.tagName.toLowerCase(), type: (el.getAttribute('type') || '').toLowerCase(),
-      label: (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().slice(0, 80),
+      label: (el.innerText || (el.type === 'password' ? '' : el.value) || el.getAttribute('aria-label') || '').trim().slice(0, 80),
       formAction: el.form ? (el.form.getAttribute('action') || '') : ''
     };
   })()`;
@@ -258,7 +260,7 @@ export async function press(wc, key, approve) {
     // Enter can submit whatever form has focus, so it goes through the human like a submit click.
     const info = await wc.executeJavaScript(`(() => {
       const el = document.activeElement;
-      return el ? { tag: el.tagName.toLowerCase(), label: (el.value || el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 60), inForm: !!el.form } : null;
+      return el ? { tag: el.tagName.toLowerCase(), label: ((el.type === 'password' ? '' : el.value) || el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 60), inForm: !!el.form } : null;
     })()`, true);
     if (!info || info.inForm || info.tag === 'textarea') {
       const ok = await approve(`Press Enter in ${info ? `${info.tag} "${info.label}"` : 'the page'}`);

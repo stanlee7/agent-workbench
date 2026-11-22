@@ -1,4 +1,10 @@
-const $ = (s, el = document) => el.querySelector(s);
+import { t, setLanguage, translate, language } from './i18n.js';
+
+import { $, el } from './dom.js';
+import { createSetupUI } from './setup.js';
+import { createSignInUI } from './signIn.js';
+
+let setupUI;
 const panesEl = $('#panes');
 const els = {};
 const labels = {};
@@ -10,12 +16,6 @@ let run = null;          // { id, task, started, agents: { id: { turns: [...] } 
 let viewing = null;      // a run loaded from history, shown read-only on the board
 const runs = {};         // id -> live record for the current turn (status, timing, tools, visited, answer)
 
-const el = (tag, cls, text) => {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (text != null) n.textContent = text;
-  return n;
-};
 
 function line(id, text, cls) {
   const log = $('.log', els[id]);
@@ -29,7 +29,7 @@ function line(id, text, cls) {
 
 function setStatus(id, status, label) {
   els[id].dataset.status = status;
-  $('.state', els[id]).textContent = label || status;
+  $('.state', els[id]).textContent = label || t(status);
 }
 
 // The browsers are native views drawn over the window; tell main where each slot is.
@@ -37,7 +37,8 @@ function sendLayout() {
   const rects = {};
   for (const [id, el] of Object.entries(els)) {
     const r = $('.slot', el).getBoundingClientRect();
-    rects[id] = { x: r.left, y: r.top, width: r.width, height: r.height };
+    const pane = el.getBoundingClientRect();
+    rects[id] = { x: r.left, y: r.top, width: r.width, height: Math.max(0, Math.min(r.bottom, pane.bottom) - r.top) };
   }
   window.wb.layout(rects);
 }
@@ -49,7 +50,11 @@ const working = () => Object.values(runs).some(r => r.status === 'working');
 
 /* ---------- running tasks ---------- */
 
-function startTurn(ids, text, followUp) {
+async function startTurn(ids, text, followUp) {
+  if (working() || setupUI.busy) return false;
+  const setup = await setupUI.refresh();
+  ids = ids.filter(id => setup.some(a => a.id === id && a.ready));
+  if (!ids.length) { openOverlay('#setupView'); return false; }
   const previous = {};
   if (!followUp || !run) {
     run = { id: runId(), task: text, started: Date.now(), agents: {} };
@@ -65,22 +70,23 @@ function startTurn(ids, text, followUp) {
     run.agents[id] = run.agents[id] || { turns: [] };
     run.agents[id].turns.push(runs[id]);
     if (!followUp) $('.log', els[id]).textContent = '';
-    line(id, `${followUp ? 'follow-up' : 'task'}: ${text}\n\n`, 'sys');
+    line(id, `${t(followUp ? 'follow-up' : 'task')}: ${text}\n\n`, 'sys');
   }
   viewing = null;
   updateCompareButton();
   renderStatus();
   window.wb.run(ids, text, followUp, previous);
+  return true;
 }
 
-function runTask() {
+async function runTask() {
   const text = $('#task').value.trim();
   const ids = selected();
   if (!text || !ids.length) return;
   const followUp = $('#followUp').checked && run && ids.every(id => run.agents[id]);
-  startTurn(ids, text, followUp);
+  if (!await startTurn(ids, text, followUp)) return;
   $('#task').value = '';
-  $('#task').placeholder = 'Follow-up question, or a new task';
+  $('#task').placeholder = t('Follow-up question, or a new task');
 }
 
 function persist() {
@@ -94,17 +100,19 @@ const NEW_PROFILE = '__new';
 
 function renderLogins(id, hosts) {
   const n = $('.logins', els[id]);
-  n.textContent = hosts.length ? `cookies: ${hosts.join(', ')}` : 'no cookies';
-  n.title = hosts.length ? 'Sites that set a session cookie in this pane, usually after a login. Clear wipes them.' : 'No site has set a session cookie in this pane yet.';
+  n.textContent = hosts.length ? t('cookies: {hosts}', { hosts: hosts.join(', ') }) : t('no cookies');
+  n.title = hosts.length ? t('Sites that set a session cookie in this pane, usually after a login. Clear wipes them.') : t('No site has set a session cookie in this pane yet.');
   n.classList.toggle('on', hosts.length > 0);
 }
 
 function renderProfiles(state) {
   for (const id of Object.keys(els)) {
     const sel = $('.profile', els[id]);
+    if (!sel) continue;
+    sel.disabled = els[id].dataset.status === 'signin';
     sel.textContent = '';
-    for (const p of state.profiles) { const o = el('option', null, p.label); o.value = p.id; sel.appendChild(o); }
-    const add = el('option', null, 'New profile…'); add.value = NEW_PROFILE; sel.appendChild(add);
+    for (const p of state.profiles) { const o = el('option', null, p.id === 'clean' || (p.id === 'me' && p.label === 'My logins') ? t(p.label) : p.label); o.value = p.id; sel.appendChild(o); }
+    const add = el('option', null, t('New profile…')); add.value = NEW_PROFILE; sel.appendChild(add);
     sel.value = state.assigned[id] || 'clean';
     renderLogins(id, state.logins[id] || []);
   }
@@ -113,7 +121,7 @@ function renderProfiles(state) {
 function askProfileName(id, sel) {
   // Inline name box in place of the select; Enter creates the profile and moves this pane onto it.
   const input = el('input', 'newprof');
-  input.placeholder = 'Profile name, e.g. Work logins';
+  input.placeholder = t('Profile name, e.g. Work logins');
   sel.replaceWith(input);
   input.focus();
   const restore = async () => { const st = await window.wb.profiles(); input.replaceWith(sel); renderProfiles(st); };
@@ -143,12 +151,12 @@ function renderStatus() {
     item.appendChild(sw);
     item.append(labels[id]);
     const status = els[id].dataset.status || 'idle';
-    if (r) item.appendChild(el('span', status, `${status === 'working' ? '✻ ' : status === 'done' ? '✓ ' : ''}${status} ${secs(r).toFixed(0)}s`));
-    else item.appendChild(el('span', null, 'idle'));
+    if (r) item.appendChild(el('span', status, `${status === 'working' ? '✻ ' : status === 'done' ? '✓ ' : ''}${t(status)} ${secs(r).toFixed(0)}s`));
+    else item.appendChild(el('span', status, t(status)));
     bar.appendChild(item);
   }
   bar.appendChild(el('span', 'spacer'));
-  if (run) bar.appendChild(el('span', 'item', `run ${run.id}`));
+  if (run) bar.appendChild(el('span', 'item', t('run {id}', { id: run.id })));
   bar.appendChild(el('span', 'item', `MCP 127.0.0.1:${port}`));
 }
 
@@ -166,6 +174,7 @@ function openOverlay(id) {
 
 function closeOverlay() {
   if (!overlay) return;
+  if (overlay === '#setupView') window.wb.setupSeen();
   $(overlay).hidden = true;
   overlay = null;
   panesEl.hidden = false;
@@ -265,28 +274,28 @@ function renderConsensus(ids) {
     const r = el('div', `crow ${cls}`);
     r.appendChild(el('b', null, title));
     items.slice(0, 12).forEach((it, i) => { if (i) r.append(', '); r.appendChild(fmt(it)); });
-    if (items.length > 12) r.append(` and ${items.length - 12} more`);
+    if (items.length > 12) r.append(t(' and {n} more', { n: items.length - 12 }));
     box.appendChild(r);
   };
-  row('ok', `Agreed by all ${n}:`, c.agreed, it => el('span', 'fact', it.display));
-  row('warn', 'Differs:', c.conflicts, list => {
+  row('ok', t('Agreed by all {n}:', { n }), c.agreed, it => el('span', 'fact', it.display));
+  row('warn', t('Differs:'), c.conflicts, list => {
     const s = el('span', 'fact');
-    list.forEach((it, i) => { if (i) s.append(' vs '); s.append(`${it.display} (${it.ids.map(id => labels[id] || id).join(', ')})`); });
+    list.forEach((it, i) => { if (i) s.append(t(' vs ')); s.append(`${it.display} (${it.ids.map(id => labels[id] || id).join(', ')})`); });
     return s;
   });
-  row('dim', 'Only one agent says:', c.lone.filter(it => !c.conflicts.flat().includes(it)), it => el('span', 'fact', `${it.display} (${labels[it.ids[0]] || it.ids[0]})`));
-  if (!c.agreed.length && !c.conflicts.length) box.appendChild(el('div', 'crow dim', 'No comparable numbers or dates found in the answers.'));
+  row('dim', t('Only one agent says:'), c.lone.filter(it => !c.conflicts.flat().includes(it)), it => el('span', 'fact', `${it.display} (${labels[it.ids[0]] || it.ids[0]})`));
+  if (!c.agreed.length && !c.conflicts.length) box.appendChild(el('div', 'crow dim', t('No comparable numbers or dates found in the answers.')));
 
   if (c.conflicts.length && !viewing) {
     const judge = el('div', 'crow judge');
-    judge.append('Let one agent check the disagreement: ');
+    judge.append(t('Let one agent check the disagreement: '));
     const sel = el('select');
     for (const id of ids) { const o = el('option', null, labels[id]); o.value = id; sel.appendChild(o); }
-    const btn = el('button', null, 'Ask to verify');
+    const btn = el('button', null, t('Ask to verify'));
     btn.onclick = () => {
-      const lines = c.conflicts.map(list => list.map(it => `${it.display} according to ${it.ids.map(id => labels[id]).join(', ')}`).join(' vs '));
-      const cites = ids.map(id => `${labels[id]}: ${sources(latest(id)).cited.join(', ') || '(no URL)'}`).join('\n');
-      const q = `The agents disagree on: ${lines.join('; ')}. Open the sources below in your browser pane, check which value is right as of now, and answer with the verified value and the URL that shows it.\n${cites}`;
+      const lines = c.conflicts.map(list => list.map(it => t('{value} according to {agents}', { value: it.display, agents: it.ids.map(id => labels[id]).join(', ') })).join(t(' vs ')));
+      const cites = ids.map(id => `${labels[id]}: ${sources(latest(id)).cited.join(', ') || t('(no URL)')}`).join('\n');
+      const q = t('The agents disagree on: {facts}. Open the sources below in your browser pane, check which value is right as of now, and answer with the verified value and the URL that shows it.\n{sources}', { facts: lines.join('; '), sources: cites });
       closeOverlay();
       startTurn([sel.value], q, true);
     };
@@ -302,7 +311,7 @@ function renderBoard() {
   // The headline is the latest question; the first task stays in the kicker once there are follow-ups.
   const turnCount = Math.max(...ids.map(id => src.agents[id].turns.length));
   const lastQ = ids.map(id => latest(id)).sort((a, b) => b.start - a.start)[0]?.q || src.task;
-  $('#boardKicker').textContent = `${viewing ? `History · ${viewing.id}` : 'Compare'}${turnCount > 1 ? ` · turn ${turnCount} · first task: ${src.task}` : ''}`;
+  $('#boardKicker').textContent = `${viewing ? t('History · {id}', { id: viewing.id }) : t('Compare')}${turnCount > 1 ? t(' · turn {n} · first task: {task}', { n: turnCount, task: src.task }) : ''}`;
   $('#boardTask').textContent = lastQ;
   $('#exportMd').disabled = false;
   renderConsensus(ids);
@@ -317,7 +326,7 @@ function renderBoard() {
   const sharedEl = $('#shared');
   sharedEl.textContent = '';
   if (shared.length) {
-    sharedEl.append('Cited by more than one agent: ');
+    sharedEl.append(t('Cited by more than one agent: '));
     shared.forEach(([h, s], i) => {
       if (i) sharedEl.append(', ');
       sharedEl.append(el('b', null, h), ` (${[...s].map(id => labels[id] || id).join(', ')})`);
@@ -349,24 +358,24 @@ function renderBoard() {
     for (const u of urls) {
       const a = el('a', `src ${cls}`, u);
       a.href = '#';
-      a.title = `Open in ${labels[id] || id}'s pane`;
+      a.title = t("Open in {agent}'s pane", { agent: labels[id] || id });
       a.onclick = e => { e.preventDefault(); if (els[id]) { closeOverlay(); window.wb.go(id, u); } };
       td.appendChild(a);
     }
   };
 
-  row('Status', (td, r) => { td.textContent = r.status; td.className = `st-${r.status}`; });
-  row('Time', (td, r) => { td.textContent = `${secs(r).toFixed(0)} s`; td.className = 'num'; });
-  row('Tool calls', (td, r) => { td.textContent = r.tools; td.className = 'num'; });
-  row('Pages opened', (td, r) => { td.textContent = (r.visited || []).length; td.className = 'num'; });
-  row('Answer', (td, r) => td.appendChild(el('div', 'answer', plain(r.answer) || (r.status === 'working' ? 'Still working.' : 'Nothing on stdout.'))));
-  row('Cited', (td, r, id) => linkList(td, sources(r).cited, 'cited', id));
-  row('Opened, not cited', (td, r, id) => linkList(td, sources(r).visited, 'visited', id));
+  row(t('Status'), (td, r) => { td.textContent = t(r.status); td.className = `st-${r.status}`; });
+  row(t('Time'), (td, r) => { td.textContent = `${secs(r).toFixed(0)} s`; td.className = 'num'; });
+  row(t('Tool calls'), (td, r) => { td.textContent = r.tools; td.className = 'num'; });
+  row(t('Pages opened'), (td, r) => { td.textContent = (r.visited || []).length; td.className = 'num'; });
+  row(t('Answer'), (td, r) => td.appendChild(el('div', 'answer', plain(r.answer) || (r.status === 'working' ? t('Still working.') : t('Nothing on stdout.')))));
+  row(t('Cited'), (td, r, id) => linkList(td, sources(r).cited, 'cited', id));
+  row(t('Opened, not cited'), (td, r, id) => linkList(td, sources(r).visited, 'visited', id));
   if (!viewing) {
-    row('Ask this agent', (td, r, id) => {
+    row(t('Ask this agent'), (td, r, id) => {
       const form = el('form', 'ask');
-      const input = el('input'); input.placeholder = `Follow-up for ${labels[id]} only`;
-      const btn = el('button', null, 'Send');
+      const input = el('input'); input.placeholder = t('Follow-up for {agent} only', { agent: labels[id] });
+      const btn = el('button', null, t('Send'));
       form.append(input, btn);
       form.onsubmit = e => { e.preventDefault(); const q = input.value.trim(); if (!q || runs[id]?.status === 'working') return; closeOverlay(); startTurn([id], q, true); };
       td.appendChild(form);
@@ -378,15 +387,15 @@ function renderBoard() {
   turnsEl.textContent = '';
   const maxTurns = Math.max(...ids.map(id => src.agents[id].turns.length));
   if (maxTurns > 1) {
-    turnsEl.appendChild(el('div', 'kicker', 'Earlier turns'));
+    turnsEl.appendChild(el('div', 'kicker', t('Earlier turns')));
     for (let i = 0; i < maxTurns - 1; i++) {
       for (const id of ids) {
-        const t = src.agents[id].turns[i];
-        if (!t) continue;
+        const turn = src.agents[id].turns[i];
+        if (!turn) continue;
         const d = el('details', 'turn');
         const sm = el('summary');
-        sm.append(el('b', null, labels[id] || id), ` · turn ${i + 1} · `, el('span', 'q', t.q));
-        d.append(sm, el('div', 'answer', plain(t.answer)));
+        sm.append(el('b', null, labels[id] || id), t(' · turn {n} · ', { n: i + 1 }), el('span', 'q', turn.q));
+        d.append(sm, el('div', 'answer', plain(turn.answer)));
         turnsEl.appendChild(d);
       }
     }
@@ -399,29 +408,29 @@ function boardMarkdown() {
   const c = consensus(ids);
   const rows = [
     `# ${src.task}`, '',
-    `- Run: ${src.id} · ${new Date(src.started).toLocaleString()}`,
-    `- Agents: ${ids.map(id => labels[id] || id).join(', ')}`, ''
+    `- ${t('Run:')} ${src.id} · ${new Date(src.started).toLocaleString(language === 'ko' ? 'ko-KR' : 'en-US')}`,
+    `- ${t('Agents:')} ${ids.map(id => labels[id] || id).join(', ')}`, ''
   ];
   if (ids.length > 1) {
-    rows.push('## Agreement', '');
-    if (c.agreed.length) rows.push(`- Agreed by all ${ids.length}: ${c.agreed.map(i => i.display).join(', ')}`);
-    for (const list of c.conflicts) rows.push(`- Differs: ${list.map(it => `${it.display} (${it.ids.map(id => labels[id] || id).join(', ')})`).join(' vs ')}`);
-    if (!c.agreed.length && !c.conflicts.length) rows.push('- No comparable numbers or dates found.');
+    rows.push(`## ${t('Agreement')}`, '');
+    if (c.agreed.length) rows.push(`- ${t('Agreed by all {n}:', { n: ids.length })} ${c.agreed.map(i => i.display).join(', ')}`);
+    for (const list of c.conflicts) rows.push(`- ${t('Differs:')} ${list.map(it => `${it.display} (${it.ids.map(id => labels[id] || id).join(', ')})`).join(t(' vs '))}`);
+    if (!c.agreed.length && !c.conflicts.length) rows.push(`- ${t('No comparable numbers or dates found.')}`);
     rows.push('');
   }
   rows.push(
     `| | ${ids.map(id => labels[id] || id).join(' | ')} |`,
     `|---|${ids.map(() => '---').join('|')}|`,
-    `| Status | ${ids.map(id => latest(id).status).join(' | ')} |`,
-    `| Time | ${ids.map(id => `${secs(latest(id)).toFixed(0)}s`).join(' | ')} |`,
-    `| Tool calls | ${ids.map(id => latest(id).tools).join(' | ')} |`,
-    `| Sources | ${ids.map(id => sources(latest(id)).cited.join('<br>') || '-').join(' | ')} |`
+    `| ${t('Status')} | ${ids.map(id => t(latest(id).status)).join(' | ')} |`,
+    `| ${t('Time')} | ${ids.map(id => `${secs(latest(id)).toFixed(0)}s`).join(' | ')} |`,
+    `| ${t('Tool calls')} | ${ids.map(id => latest(id).tools).join(' | ')} |`,
+    `| ${t('Sources')} | ${ids.map(id => sources(latest(id)).cited.join('<br>') || '-').join(' | ')} |`
   );
   for (const id of ids) {
     rows.push('', `## ${labels[id] || id}`);
-    src.agents[id].turns.forEach((t, i) => {
-      if (src.agents[id].turns.length > 1) rows.push('', `### Turn ${i + 1}: ${t.q}`);
-      rows.push('', (t.answer || '').trim() || '_no answer_');
+    src.agents[id].turns.forEach((turn, i) => {
+      if (src.agents[id].turns.length > 1) rows.push('', `### ${t('Turn {n}: {q}', { n: i + 1, q: turn.q })}`);
+      rows.push('', (turn.answer || '').trim() || `_${t('no answer')}_`);
     });
   }
   return rows.join('\n') + '\n';
@@ -431,8 +440,8 @@ function exportName() {
   const src = viewing || run;
   const date = new Date(src.started);
   const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const topic = src.task.replace(/https?:\/\/\S+/g, '').replace(/[\\/:*?"<>|]+/g, ' ').trim().split(/\s+/).slice(0, 5).join(' ').slice(0, 40) || 'task';
-  return `${ymd}_조사_${topic}_검토용.md`;
+  const topic = src.task.replace(/https?:\/\/\S+/g, '').replace(/[\\/:*?"<>|]+/g, ' ').trim().split(/\s+/).slice(0, 5).join(' ').slice(0, 40) || t('task');
+  return t('{date}_research_{topic}_review.md', { date: ymd, topic });
 }
 
 function openBoard() {
@@ -450,14 +459,14 @@ async function openHistory() {
   $('#historyEmpty').hidden = list.length > 0;
   for (const r of list) {
     const tr = el('tr');
-    tr.appendChild(el('td', 'c-when', new Date(r.started).toLocaleString()));
+    tr.appendChild(el('td', 'c-when', new Date(r.started).toLocaleString(language === 'ko' ? 'ko-KR' : 'en-US')));
     tr.appendChild(el('td', null, r.task));
     tr.appendChild(el('td', 'c-agents', r.agents.map(id => labels[id] || id).join(', ')));
     tr.appendChild(el('td', 'c-turns num', String(r.turns)));
     const act = el('td', 'c-act');
-    const open = el('button', null, 'Open');
+    const open = el('button', null, t('Open'));
     open.onclick = async () => { viewing = await window.wb.loadRun(r.id); if (viewing) { renderBoard(); openOverlay('#board'); } };
-    const again = el('button', null, 'Run again');
+    const again = el('button', null, t('Run again'));
     again.onclick = () => { closeOverlay(); $('#task').value = r.task; $('#followUp').checked = false; $('#task').focus(); };
     act.append(open, ' ', again);
     tr.appendChild(act);
@@ -481,10 +490,10 @@ function agentRow(a, i) {
   const cmds = el('div', 'cmds');
   const cmd = el('input', 'txt mono'); cmd.value = a.command || ''; cmd.placeholder = 'mycli -p {prompt}'; cmd.spellcheck = false;
   cmd.oninput = () => { draft[i].command = cmd.value; };
-  const fu = el('input', 'txt mono dim'); fu.value = a.followUp || ''; fu.placeholder = 'follow-up command (optional), e.g. mycli --continue -p {prompt}'; fu.spellcheck = false;
+  const fu = el('input', 'txt mono dim'); fu.value = a.followUp || ''; fu.placeholder = t('follow-up command (optional), e.g. mycli --continue -p {prompt}'); fu.spellcheck = false;
   fu.oninput = () => { draft[i].followUp = fu.value; };
   cmds.append(cmd, fu);
-  const del = el('button', null, 'Remove');
+  const del = el('button', null, t('Remove'));
   del.onclick = () => { draft.splice(i, 1); renderAgents(); };
   for (const [node, cls] of [[on, 'c-on'], [color, 'c-color'], [name, 'c-name'], [cmds, ''], [del, 'c-del']]) {
     const td = el('td', cls); td.appendChild(node); tr.appendChild(td);
@@ -501,10 +510,12 @@ function renderAgents() {
 async function openAgents() {
   const { path, agents } = await window.wb.agents();
   draft = agents.map(a => ({ ...a }));
-  $('#agentsPath').textContent = `Saved in ${path}`;
+  $('#agentsPath').textContent = t('Saved in {path}', { path });
   renderAgents();
   openOverlay('#agentsView');
 }
+
+/* ---------- setup ---------- */
 
 /* ---------- layouts, fold, shortcuts ---------- */
 
@@ -531,7 +542,7 @@ const FOLDS = ['both', 'browser', 'log'];
 function setFold(id, fold) {
   els[id].classList.toggle('browser-only', fold === 'browser');
   els[id].classList.toggle('log-only', fold === 'log');
-  $('.fold', els[id]).textContent = fold;
+  $('.fold', els[id]).textContent = t(fold);
   els[id].dataset.fold = fold;
   requestAnimationFrame(sendLayout);
 }
@@ -551,7 +562,7 @@ function shortcuts(e) {
 const DOCK_KEY = 'workbench.dock';
 function setDock(where) {
   document.body.classList.toggle('dock-bottom', where === 'bottom');
-  $('#dock').textContent = where === 'bottom' ? 'Bar at top' : 'Bar at bottom';
+  $('#dock').textContent = where === 'bottom' ? t('Bar at top') : t('Bar at bottom');
   try { localStorage.setItem(DOCK_KEY, where); } catch {}
   requestAnimationFrame(sendLayout);
 }
@@ -561,6 +572,12 @@ function setDock(where) {
 async function init() {
   const cfg = await window.wb.config();
   port = cfg.port;
+  setupUI = createSetupUI({ selected, openOverlay, port });
+  setLanguage(cfg.locale);
+  document.documentElement.lang = language;
+  translate();
+  translate($('#paneTpl').content);
+  $('#language').value = language;
   const tpl = $('#paneTpl');
   // The layout mode sets the grid columns once the panes exist.
   for (const p of cfg.panes) {
@@ -595,7 +612,7 @@ async function init() {
     if (overlay === '#board' && !viewing) renderBoard();
     if (!working()) {
       persist();
-      if (run) window.wb.notify('Agent Workbench', `All agents finished: ${run.task.slice(0, 80)}`);
+      if (run) window.wb.notify('Agent Workbench', t('All agents finished: {task}', { task: run.task.slice(0, 80) }));
       if (cfg.autoCompare && overlay !== '#board') setTimeout(openBoard, 2000);
     }
   };
@@ -608,11 +625,11 @@ async function init() {
     if (r && r.status === 'working' && url && !r.visited.includes(url)) r.visited.push(url);
   });
   window.wb.on('pane:status', ({ id, status, code }) => {
-    setStatus(id, status, status === 'error' ? `exited (${code})` : status);
+    setStatus(id, status, status === 'error' ? t('exited ({code})', { code }) : t(status));
     if (status === 'working') return renderStatus();
     const r = runs[id];
     if (r) { r.status = status; r.end = Date.now(); }
-    line(id, `\n[${status === 'done' ? 'finished' : 'stopped'}${r ? ` after ${secs(r).toFixed(0)}s` : ''}]\n`, 'sys');
+    line(id, `\n[${t(status === 'done' ? 'finished' : 'stopped')}${r ? t(' after {seconds}s', { seconds: secs(r).toFixed(0) }) : ''}]\n`, 'sys');
     refresh();
   });
   window.wb.on('pane:out', ({ id, text, stream }) => {
@@ -624,19 +641,20 @@ async function init() {
     line(id, `● ${name}${a}\n`, 'tool');
     if (runs[id]) runs[id].tools++;
   });
+  const signInUI = createSignInUI({ els, labels, setStatus, renderProfiles, renderStatus, sendLayout, closeOverlay, setFold, setLayout, panesEl, line });
   window.wb.on('pane:approval', ({ id, approvalId, question }) => {
     const prev = els[id].dataset.status;
-    setStatus(id, 'waiting', 'needs your approval');
-    window.wb.notify(`${labels[id]} needs approval`, question);
+    setStatus(id, 'waiting', t('needs your approval'));
+    window.wb.notify(t('{agent} needs approval', { agent: labels[id] }), question);
     const card = document.createElement('div');
     card.className = 'approval';
-    card.innerHTML = `<div class="q"></div><div class="btns"><button class="yes">Allow</button><button class="no">Block</button></div>`;
+    card.innerHTML = `<div class="q"></div><div class="btns"><button class="yes">${t('Allow')}</button><button class="no">${t('Block')}</button></div>`;
     $('.q', card).textContent = question;
     const answer = ok => {
       window.wb.answer(approvalId, ok);
       card.remove();
       setStatus(id, prev || 'working');
-      line(id, `${ok ? 'allowed' : 'blocked'}: ${question}\n`, 'sys');
+      line(id, `${ok ? t('allowed') : t('blocked')}: ${question}\n`, 'sys');
       requestAnimationFrame(sendLayout);
     };
     $('.yes', card).onclick = () => answer(true);
@@ -647,29 +665,64 @@ async function init() {
     requestAnimationFrame(sendLayout);
   });
 
+  for (const chip of document.querySelectorAll('#starters button')) chip.onclick = () => {
+    closeOverlay();
+    $('#task').value = t(chip.dataset.i18n);
+    $('#followUp').checked = false;
+    $('#task').focus();
+  };
   $('#runAll').onclick = runTask;
   $('#compare').onclick = () => { viewing = null; openBoard(); };
   $('#closeBoard').onclick = closeOverlay;
   $('#copyMd').onclick = async () => {
     await navigator.clipboard.writeText(boardMarkdown());
-    $('#copyMd').textContent = 'Copied';
-    setTimeout(() => { $('#copyMd').textContent = 'Copy as Markdown'; }, 1500);
+    $('#copyMd').textContent = t('Copied');
+    setTimeout(() => { $('#copyMd').textContent = t('Copy as Markdown'); }, 1500);
   };
   $('#exportMd').onclick = async () => {
     const file = await window.wb.exportRun(exportName(), boardMarkdown());
-    if (file) { $('#exportMd').textContent = 'Saved'; setTimeout(() => { $('#exportMd').textContent = 'Export .md'; }, 2000); }
+    if (file) { $('#exportMd').textContent = t('Saved'); setTimeout(() => { $('#exportMd').textContent = t('Export .md'); }, 2000); }
   };
   $('#openHistory').onclick = openHistory;
   $('#closeHistory').onclick = closeOverlay;
   $('#openRunsFolder').onclick = () => window.wb.openRunsFolder();
   $('#openAgents').onclick = openAgents;
+  $('#openSetup').onclick = setupUI.open;
+  $('#language').onchange = async event => {
+    setLanguage(event.target.value);
+    await window.wb.setLanguage(language);
+    document.documentElement.lang = language;
+    translate(); translate($('#paneTpl').content);
+    $('#copyMd').textContent = t('Copy as Markdown');
+    $('#exportMd').textContent = t('Export .md');
+    $('#saveAgents').textContent = t('Save and restart');
+    $('#task').placeholder = t(run ? 'Follow-up question, or a new task' : 'One task for every checked agent. Enter to run, Shift+Enter for a new line');
+    for (const id of Object.keys(els)) {
+      setStatus(id, els[id].dataset.status || 'idle');
+      setFold(id, els[id].dataset.fold || 'both');
+    }
+    signInUI.translate();
+    for (const card of document.querySelectorAll('.approval')) {
+      $('.yes', card).textContent = t('Allow'); $('.no', card).textContent = t('Block');
+    }
+    setDock(document.body.classList.contains('dock-bottom') ? 'bottom' : 'top');
+    renderProfiles(await window.wb.profiles());
+    renderStatus();
+    if (overlay === '#board') renderBoard();
+    if (overlay === '#historyView') await openHistory();
+    if (overlay === '#agentsView') renderAgents();
+    if (overlay === '#setupView') await setupUI.refresh();
+  };
+  $('#checkSetup').onclick = setupUI.refresh;
+  $('#closeSetup').onclick = closeOverlay;
+  $('#who').onchange = () => { $('#runAll').disabled = setupUI.busy || !selected().length; };
   $('#cancelAgents').onclick = closeOverlay;
   $('#openFile').onclick = () => window.wb.openAgentsFile();
   $('#addAgent').onclick = () => { draft.push({ label: '', color: '#666666', enabled: true, command: '', followUp: '' }); renderAgents(); };
   $('#saveAgents').onclick = () => {
     const list = draft.filter(a => a.label.trim() && a.command.trim());
-    if (!list.some(a => a.enabled !== false)) { $('#saveAgents').textContent = 'Turn on at least one'; return; }
-    $('#saveAgents').textContent = 'Restarting';
+    if (!list.some(a => a.enabled !== false)) { $('#saveAgents').textContent = t('Turn on at least one'); return; }
+    $('#saveAgents').textContent = t('Restarting');
     window.wb.saveAgents(list);
   };
   $('#dock').onclick = () => setDock(document.body.classList.contains('dock-bottom') ? 'top' : 'bottom');
@@ -695,10 +748,13 @@ async function init() {
   window.addEventListener('resize', sendLayout);
   sendLayout();
 
+  if (cfg.firstRun) openOverlay('#setupView');
+  await setupUI.refresh();
+
   if (cfg.startTask) {
     $('#task').value = cfg.startTask;
     // Give the panes a moment to load their start page before the agents arrive.
-    setTimeout(runTask, 2500);
+    if (!cfg.firstRun) setTimeout(runTask, 2500);
   }
 }
 

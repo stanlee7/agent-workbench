@@ -1,13 +1,16 @@
 import { app, BrowserWindow, WebContentsView, ipcMain, screen, shell, dialog, Notification } from 'electron';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { startMcpHttp } from './mcpServer.js';
+import { addMacCliPaths, checkAgents, registerAgy, AGY_DOCS } from './setup.js';
+import { createSignIns } from './signIn.js';
 import { startRecorder } from './recorder.js';
 import { loadAgents, saveAgents, runAgent, newSession, slug, CONFIG_PATH } from './agents.js';
 import { CLEAN, profileList, profileOf, setProfile, addProfile, partitionFor, signedInHosts } from './profiles.js';
+
+addMacCliPaths();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.WORKBENCH_PORT || 7788);
@@ -59,6 +62,7 @@ function createPane(id, url = START_URL) {
   // Popups open in the same pane so the agent never loses track of them.
   view.webContents.setWindowOpenHandler(({ url }) => { view.webContents.loadURL(url); return { action: 'deny' }; });
   views[id] = view;
+  view.setVisible(panesShown && !collapsed[id]);
   reportLogins(id);
 }
 
@@ -73,10 +77,25 @@ function replacePane(id) {
 
 const panes = Object.fromEntries(PANE_IDS.map(id => [id, { id, wc: () => views[id].webContents }]));
 
+const signIns = createSignIns({
+  ipcMain, send,
+  isRenderer: event => event.sender === win?.webContents,
+  isClean: id => profileOf(settings, id) === CLEAN,
+  keep: id => {
+    if (profileOf(settings, id) !== CLEAN) return;
+    const profiles = profileList(settings);
+    if (!profiles.some(p => p.id === 'me')) profiles.push({ id: 'me', label: 'My logins' });
+    setProfile(settings, id, 'me'); saveSettings();
+    replacePane(id);
+  }
+});
+
 startMcpHttp({
   port: PORT,
   panes,
   hooks: {
+    signIn: (id, reason) => signIns.ask(id, reason),
+    signingIn: id => signIns.waiting(id),
     onTool: (id, name, args) => send('pane:tool', { id, name, args }),
     approve: (id, question) => new Promise(resolve => {
       const approvalId = ++approvalSeq;
@@ -104,7 +123,7 @@ const profilesPayload = () => ({
 });
 ipcMain.handle('profiles:get', () => profilesPayload());
 ipcMain.handle('profile:set', (_e, { id, profileId }) => {
-  if (!views[id]) return profilesPayload();
+  if (!views[id] || signIns.waiting(id)) return profilesPayload();
   setProfile(settings, id, profileId); saveSettings();
   replacePane(id);
   return profilesPayload();
@@ -112,7 +131,8 @@ ipcMain.handle('profile:set', (_e, { id, profileId }) => {
 ipcMain.handle('profile:add', (_e, label) => { const id = addProfile(settings, label); saveSettings(); return { id, ...profilesPayload() }; });
 // Wipes the pane's cookie jar. On a named profile this signs every pane on that profile out.
 ipcMain.handle('profile:clear', async (_e, id) => {
-  const v = views[id]; if (!v) return profilesPayload();
+  const v = views[id]; if (!v || signIns.waiting(id)) return profilesPayload();
+  if (PANE_IDS.some(other => signIns.waiting(other) && views[other]?.webContents.session === v.webContents.session)) return profilesPayload();
   await v.webContents.session.clearStorageData();
   // Back to the start page rather than a reload: reloading the same site would set its cookies again at once.
   v.webContents.loadURL(START_URL);
@@ -133,9 +153,19 @@ ipcMain.on('pane:go', (_e, { id, url }) => {
 
 // One session id per pane per task, so a follow-up question lands in the same CLI session.
 const sessions = {};
+let setupSnapshot = [], setupAt = 0;
+async function inspectSetup() {
+  setupSnapshot = await checkAgents(ALL_AGENTS);
+  setupAt = Date.now();
+  return setupSnapshot;
+}
 
-ipcMain.on('task:run', (_e, { ids, task, followUp, previous }) => {
+ipcMain.on('task:run', async (_e, { ids, task, followUp, previous }) => {
+  const rows = Date.now() - setupAt < 5000 ? setupSnapshot : await inspectSetup();
+  const ready = new Set(rows.filter(a => a.ready).map(a => a.id));
   for (const id of ids) {
+    if (!AGENTS[id]) continue;
+    if (!ready.has(id)) { send('pane:status', { id, status: 'unavailable' }); continue; }
     if (running[id]) continue;
     if (!followUp || !sessions[id]) sessions[id] = newSession();
     send('pane:status', { id, status: 'working' });
@@ -143,6 +173,7 @@ ipcMain.on('task:run', (_e, { ids, task, followUp, previous }) => {
     running[id] = runAgent(AGENTS[id], `http://127.0.0.1:${PORT}/mcp/${id}`, task, turn, {
       onOut: (text, stream) => send('pane:out', { id, text, stream }),
       onExit: code => {
+        signIns.cancel(id);
         delete running[id];
         send('pane:status', { id, status: code === 0 ? 'done' : 'error', code });
       }
@@ -163,7 +194,7 @@ const collapsed = {};
 let panesShown = true;
 ipcMain.on('panes:visible', (_e, visible) => { panesShown = visible; for (const [id, v] of Object.entries(views)) v.setVisible(visible && !collapsed[id]); });
 
-ipcMain.on('task:stop', (_e, { id }) => stop(running[id]));
+ipcMain.on('task:stop', (_e, { id }) => { signIns.cancel(id); stop(running[id]); });
 
 /* ---------- run history, export, settings ---------- */
 
@@ -188,7 +219,7 @@ ipcMain.on('runs:open', () => { fs.mkdirSync(RUNS_DIR, { recursive: true }); she
 // Export the compare board as Markdown; the folder picked last time is offered first.
 ipcMain.handle('run:export', async (_e, { name, markdown }) => {
   const res = await dialog.showSaveDialog(win, {
-    title: 'Export compare board',
+    title: (settings.language || app.getLocale()).startsWith('ko') ? '비교판 저장' : 'Export compare board',
     defaultPath: path.join(settings.exportDir || app.getPath('documents'), name),
     filters: [{ name: 'Markdown', extensions: ['md'] }]
   });
@@ -213,11 +244,25 @@ const START_TASK = taskArg > 0 ? process.argv[taskArg + 1] || '' : '';
 
 ipcMain.handle('config', () => ({
   port: PORT,
+  firstRun: !settings.setupSeen,
+  locale: settings.language || (app.getLocale().startsWith('ko') ? 'ko' : 'en'),
   startTask: START_TASK,
   // While recording a demo, open the compare board by itself once every agent has finished.
   autoCompare: Boolean(process.env.WORKBENCH_RECORD),
   panes: PANE_IDS.map(id => ({ id, label: AGENTS[id].label, color: AGENTS[id].color }))
 }));
+
+ipcMain.handle('settings:language', (_e, language) => {
+  if (!['ko', 'en'].includes(language)) return;
+  settings.language = language; saveSettings();
+});
+ipcMain.handle('setup:check', inspectSetup);
+ipcMain.handle('setup:seen', () => { settings.setupSeen = true; saveSettings(); });
+ipcMain.handle('setup:register-agy', async (event, id) => {
+  if (event.sender !== win?.webContents || !AGENTS[id]) return false;
+  return registerAgy(AGENTS[id], PORT);
+});
+ipcMain.on('setup:docs', () => shell.openExternal(AGY_DOCS));
 
 ipcMain.handle('agents:get', () => ({ path: CONFIG_PATH, agents: ALL_AGENTS }));
 ipcMain.on('agents:open', () => shell.openPath(CONFIG_PATH));
@@ -255,6 +300,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  signIns.close();
   Object.values(running).forEach(stop);
   app.quit();
 });

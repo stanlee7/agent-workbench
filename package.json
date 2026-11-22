@@ -1,15 +1,17 @@
 {
   "name": "agent-workbench",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "One desktop app, any CLI agents (Claude Code, Codex, Antigravity, more), each driving its own browser pane over MCP. Ask all at once, compare the answers, approve the risky clicks.",
   "type": "module",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:agents": "node scripts/agents-smoke.mjs",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac"
+    "dist:mac": "node scripts/dist-mac.mjs",
+    "smoke:ipc": "node scripts/ipc-smoke.mjs"
   },
   "keywords": [
     "electron",
@@ -71,12 +73,13 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64",
-            "x64"
+            "arm64"
           ]
         }
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "icon": "build/icon.icns"
     },
     "publish": null
   }

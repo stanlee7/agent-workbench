@@ -7,12 +7,13 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import * as B from './browserTools.js';
 
-function buildServer(pane, hooks) {
-  const server = new McpServer({ name: `workbench-${pane.id}`, version: '0.1.0' });
+export function buildServer(pane, hooks) {
+  const server = new McpServer({ name: `workbench-${pane.id}`, version: '0.3.0' });
   const text = t => ({ content: [{ type: 'text', text: t }] });
 
   // Every call is logged to the pane so the human can follow along.
   const run = (name, args, fn) => async () => {
+    if (hooks.signingIn?.(pane.id) && name !== 'ask_user_to_sign_in') return text('The user is signing in. Wait for ask_user_to_sign_in to finish.');
     hooks.onTool(pane.id, name, args);
     try {
       return await fn();
@@ -21,6 +22,11 @@ function buildServer(pane, hooks) {
     }
   };
   const approve = (question) => hooks.approve(pane.id, question);
+
+  server.registerTool('ask_user_to_sign_in', {
+    description: 'Ask the human to sign in manually in this pane, including password and 2FA. Waits up to ten minutes; returns signed in, skipped, or timed out. Never type passwords or payment details. After signed in, read_page to check the result; otherwise report the limitation without retrying.',
+    inputSchema: { reason: z.string().trim().min(1).max(1000) }
+  }, a => run('ask_user_to_sign_in', a, async () => text(await B.askUserToSignIn(a.reason, reason => hooks.signIn(pane.id, reason))))());
 
   server.registerTool('navigate', {
     description: 'Open a URL in your browser pane.',
